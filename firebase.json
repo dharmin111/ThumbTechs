@@ -1,0 +1,35 @@
+{
+  "functions": [
+    {
+      "source": "thumbtech-functions",
+      "codebase": "thumbtech-functions",
+      "predeploy": []
+    }
+  ],
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "thumbtech-521ae",
+          "appId": "1:988985361848:android:84ede6bad6d742ffc3fb4d",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "thumbtech-521ae",
+          "configurations": {
+            "android": "1:988985361848:android:84ede6bad6d742ffc3fb4d",
+            "ios": "1:988985361848:ios:22e20423162eb8ecc3fb4d"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,92 @@
+name: thumstechs
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+3
+
+environment:
+  sdk: ^3.11.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  firebase_auth: ^6.5.1
+  cloud_firestore: ^6.4.1
+  firebase_storage: ^13.4.1
+  image_picker: ^1.2.2
+  firebase_core: ^4.9.0
+  shared_preferences: ^2.5.5
+  permission_handler: ^12.0.1
+  intl: ^0.20.2
+  url_launcher: ^6.3.2
+  rxdart: ^0.28.0
+  firebase_messaging: ^16.2.2
+  flutter_local_notifications: ^17.2.3
+  http: ^1.6.0
+  cloud_functions: ^6.3.1
+  onesignal_flutter: ^5.1.0
+  flutter_launcher_icons: ^0.14.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+# ✅ Flutter Launcher Icons Configuration (Moved OUTSIDE the flutter section)
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/AppLogoo/AppLogo.PNG"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/AppLogoo/AppLogo.PNG"
+  remove_alpha_ios: true
+  min_sdk_android: 21
+
+# ✅ Flutter Configuration
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/img_2.png
+    - assets/images/forgetpassword.png
+    - assets/images/logins.png
+    - assets/images/dash1.png
+    - assets/images/LoginIcon.PNG
+    - assets/images/d2.png
+    - assets/images/das2.png
+    - assets/Appliance/Ap1.png
+    - assets/Appliance/Ac.jpeg
+    - assets/Appliance/chimney.jpeg
+    - assets/Appliance/ap2.png
+    - assets/Appliance/waterp.jpeg
+    - assets/Appliance/ap3.png
+    - assets/Appliance/ap4.png
+    - assets/Appliance/ap5.png
+    - assets/Appliance/ap6.png
+    - assets/Appliance/ap7.png
+    - assets/Appliance/ap8.png
+    - assets/Appliance/hm1.png
+    - assets/Appliance/hm2.png
+    - assets/Appliance/elec1.png
+    - assets/revicon/addnote.png
+    - assets/revicon/budget.png
+    - assets/revicon/issue.png
+    - assets/revicon/location.png
+    - assets/revicon/pincode.png
+    - assets/revicon/serviceicon.png
+    - assets/AppLogoo/AppLogo.PNG
+    - assets/AppLogoo/firststart.PNG
+    - assets/AppLogoo/secondstart.PNG
+    - assets/AppLogoo/thirdstart.PNG
+#    for Onboarding screens
+    - assets/onboarding/cust1.png
+    - assets/onboarding/cust2.png
+    - assets/onboarding/cust3.png
+    - assets/onboarding/cust4.png
+
+
+    - assets/onboarding/techon1.png
+    - assets/onboarding/techon2.png
+    - assets/onboarding/techon3.png

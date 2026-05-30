@@ -1,0 +1,623 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'CustomerReviewScreen.dart';
+
+const primaryCyan = Color(0xFF42D7D7);
+const darkBlue = Color(0xFF0C1B4D);
+const lightBlue = Color(0xFF7EC8FF);
+const yellow = Color(0xFFFFD428);
+const background = Color(0xFFFFFFFF);
+
+class ServiceDetailScreen extends StatefulWidget {
+  final String serviceName;
+
+  const ServiceDetailScreen({super.key, required this.serviceName});
+
+  @override
+  State<ServiceDetailScreen> createState() => _ServiceDetailScreenState();
+}
+
+class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
+  final ImagePicker _picker = ImagePicker();
+
+  String pincode = '';
+  String address = '';
+  String issueDescription = '';
+  List<XFile> uploadedImages = [];
+  String budget = '800';
+  String selectedServiceType = '';
+
+  String getServiceDescription() {
+    Map<String, String> descriptions = {
+      'Washing Machine Repair': 'Expert washing machine repair services including drum replacement, motor repair, water leakage fixes, and electronic board troubleshooting. We handle all major brands with warranty on parts.',
+      'Microwave Repair': 'Professional microwave repair for all issues including heating problems, sparking, turntable not rotating, and keypad malfunction. Same-day service available.',
+      'Refrigerator Repair': 'Complete refrigerator repair services including cooling issues, gas refilling, compressor replacement, and thermostat repair. 90-day service warranty.',
+      'AC Repair & Service': 'Comprehensive AC services including gas refilling, compressor repair, filter cleaning, and PCB repair. Annual maintenance contracts available.',
+      'Geyser Repair': 'Expert geyser repair and installation services for all types. We fix heating issues, leaks, thermostat problems, and safety valve replacements.',
+      'Air Cooler Repair': 'Professional air cooler services including pump repair, pad replacement, motor servicing, and complete cleaning. Summer-ready maintenance packages.',
+      'TV Repair': 'LCD, LED, and Smart TV repair specialists. We fix display issues, sound problems, motherboard repair, and power supply issues.',
+      'Plumbing Service': '24/7 plumbing services for all emergency repairs. Fixing leaks, unclogging drains, installing fixtures, and complete bathroom renovation.',
+      'Carpenter': 'Skilled carpenters for all woodwork needs. Furniture repair, custom cabinets, door and window fitting, and wooden flooring installation.',
+      'CCTV Installation & Services': 'Professional CCTV installation for homes and businesses. We provide camera installation, DVR setup, mobile viewing configuration, and maintenance.',
+      'Water Purifier / RO Service': 'Thorough water tank cleaning and disinfection services. We use professional equipment and eco-friendly cleaning solutions.',
+      'Electrical Work': 'Licensed electricians for all electrical work including wiring, switchboard installation, fan and light fitting, and circuit breaker repair.',
+      'Chimney Repair': 'Kitchen chimney repair and maintenance services. We clean filters, repair motors, fix control panels, and provide installation services.',
+      'Furniture Assembly': 'Professional furniture assembly for all types. We assemble beds, sofas, tables, chairs, wardrobes, and office furniture quickly.',
+      'Water Tank Cleaning': 'Professional cleaning and disinfection of water tanks to ensure safe, clean water supply for your home or business.',
+    };
+
+    return descriptions[widget.serviceName] ??
+        'We provide professional repair, installation, and maintenance services for ${widget.serviceName} at your doorstep. Our certified technicians ensure quality service with warranty.';
+  }
+
+  String getServiceType() {
+    Map<String, String> serviceTypes = {
+      'Washing Machine Repair': 'Washing Machine Repair',
+      'Microwave Repair': 'Microwave Repair',
+      'Refrigerator Repair': 'Refrigerator Repair',
+      'AC Repair & Service': 'AC Repair & Service',  // Changed from 'AC Service'
+      'Geyser Repair': 'Geyser Repair',
+      'Air Cooler Repair': 'Air Cooler Repair',
+      'TV Repair': 'TV Repair',
+      'Plumbing Service': 'Plumbing Service',
+      'Carpenter': 'Carpenter',
+      'CCTV Installation & Services': 'CCTV Installation & Services',
+      'Water Tank Cleaning': 'Water Tank Cleaning',
+      'Electrical Work': 'Electrical Work',
+      'Chimney Repair': 'Chimney Repair',
+      'Furniture Assembly': 'Furniture Assembly',
+    };
+    return serviceTypes[widget.serviceName] ?? widget.serviceName;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    selectedServiceType = getServiceType();
+  }
+
+  Future<void> _showImagePickerOptions() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              const Text(
+                'Choose Option',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: primaryCyan),
+                title: const Text('Take Photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImageFromCamera();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: primaryCyan),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImagesFromGallery();
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+      );
+
+      if (image != null) {
+        setState(() {
+          uploadedImages.add(image);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo captured successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error picking image from camera: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error accessing camera: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickImagesFromGallery() async {
+    try {
+      final List<XFile> images = await _picker.pickMultiImage(
+        imageQuality: 80,
+      );
+
+      if (images.isNotEmpty) {
+        setState(() {
+          uploadedImages.addAll(images);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${images.length} image(s) selected successfully!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error picking images from gallery: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error accessing gallery: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _removeImage(int index) {
+    setState(() {
+      uploadedImages.removeAt(index);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: background,
+      appBar: AppBar(
+        title: Text(
+          widget.serviceName,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: darkBlue,
+          ),
+        ),
+        backgroundColor: background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: darkBlue),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Banner with specific description
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [primaryCyan.withOpacity(0.1), lightBlue.withOpacity(0.1)],
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.serviceName,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: darkBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    getServiceDescription(),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: darkBlue.withOpacity(0.7),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Service Type
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Service Type',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: darkBlue.withOpacity(0.8),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.build_circle_outlined,
+                      size: 20,
+                      color: primaryCyan,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        selectedServiceType,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: darkBlue,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Enter Pincode
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Enter Pincode',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: darkBlue.withOpacity(0.8),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: TextField(
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  onChanged: (value) {
+                    setState(() {
+                      pincode = value;
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'Enter your area pincode',
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.all(12),
+                    counterText: '',
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Enter Address
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Enter Address',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: darkBlue.withOpacity(0.8),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: TextField(
+                  maxLines: 2,
+                  onChanged: (value) {
+                    setState(() {
+                      address = value;
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'Enter your complete address',
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.all(12),
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Describe the issue
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Describe The Issue',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: darkBlue.withOpacity(0.8),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: TextField(
+                  maxLines: 3,
+                  onChanged: (value) {
+                    setState(() {
+                      issueDescription = value;
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    hintText: 'Please describe your issue in detail...',
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.all(12),
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Upload Photos with Camera and Gallery options
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Upload Photos (Optional)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: darkBlue.withOpacity(0.8),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: _showImagePickerOptions,
+                        icon: Icon(Icons.add_photo_alternate, color: primaryCyan),
+                        tooltip: 'Add Photos',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            if (uploadedImages.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    Text(
+                      'Selected Images (${uploadedImages.length})',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: darkBlue.withOpacity(0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 120,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: uploadedImages.length,
+                        itemBuilder: (context, index) {
+                          return Stack(
+                            children: [
+                              Container(
+                                width: 100,
+                                height: 100,
+                                margin: const EdgeInsets.only(right: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  image: DecorationImage(
+                                    image: FileImage(File(uploadedImages[index].path)),
+                                    fit: BoxFit.cover,
+                                  ),
+                                  border: Border.all(color: primaryCyan, width: 1),
+                                ),
+                              ),
+                              Positioned(
+                                right: 5,
+                                top: 5,
+                                child: GestureDetector(
+                                  onTap: () => _removeImage(index),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.7),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 20),
+
+            // Budget
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Your Budget (₹)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: darkBlue.withOpacity(0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: TextField(
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) {
+                        setState(() {
+                          budget = value;
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        hintText: '',
+                        prefixText: '₹',
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Technicians will see your budget',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: darkBlue.withOpacity(0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 30),
+
+            // Continue Button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              child: ElevatedButton(
+                onPressed: () {
+                  if (pincode.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter your pincode'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (address.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Please enter your address'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  // Navigate to Review Screen with all data
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReviewScreen(
+                        serviceName: widget.serviceName,
+                        serviceType: selectedServiceType,
+                        pincode: pincode,
+                        address: address,
+                        issueDescription: issueDescription,
+                        images: uploadedImages,
+                        budget: budget,
+                      ),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryCyan,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Continue',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
