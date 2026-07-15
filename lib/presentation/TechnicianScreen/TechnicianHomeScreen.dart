@@ -2,6 +2,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../Services/oneSignalNotificationService .dart';
+import 'YouTubeVideoPlayerScreen.dart';
 
 class TechnicianHomeScreen extends StatefulWidget {
   const TechnicianHomeScreen({super.key});
@@ -15,10 +17,20 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
   List<String> technicianCategories = [];
   List<String> technicianPincodes = [];
   bool isAvailable = true;
-  int totalPending = 0;
-  List<QueryDocumentSnapshot> pendingRequests = [];
   bool isLoading = true;
   bool _isActive = true;
+
+  int totalPending = 0;
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? _requestsStream;
+
+  int _lastRequestCount = 0;
+  bool _isPopupShowing = false;
+  bool _isFirstSnapshot = true;
+
+  String? _highlightedRequestId;
+  bool _shouldHighlight = false;
+
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -29,9 +41,11 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
   @override
   void dispose() {
     _isActive = false;
+    _scrollController.dispose();
     super.dispose();
   }
 
+  // ================= FETCH TECHNICIAN DATA =================
   Future<void> _fetchTechnicianData() async {
     if (!_isActive || !mounted) return;
 
@@ -41,50 +55,57 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
 
     try {
       User? user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        DocumentSnapshot doc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .get();
+      if (user == null) {
+        if (!_isActive || !mounted) return;
+        setState(() {
+          isLoading = false;
+        });
+        return;
+      }
 
-        if (doc.exists) {
-          final data = doc.data() as Map<String, dynamic>;
+      DocumentSnapshot doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
 
-          List<String> pincodesList = [];
-          if (data['pincodes'] != null && (data['pincodes'] as List).isNotEmpty) {
-            pincodesList = List<String>.from(data['pincodes']);
-          } else if (data['pincode'] != null && data['pincode'].toString().isNotEmpty) {
-            pincodesList = [data['pincode'].toString()];
-          }
+      if (!doc.exists) {
+        if (!_isActive || !mounted) return;
+        setState(() {
+          isLoading = false;
+        });
+        _showIncompleteProfileDialog();
+        return;
+      }
 
-          if (!_isActive || !mounted) return;
+      final data = doc.data() as Map<String, dynamic>;
 
-          setState(() {
-            technicianName = data['name'] ?? 'Technician';
-            technicianCategories = List<String>.from(data['categories'] ?? []);
-            technicianPincodes = pincodesList;
-            isAvailable = data['isActive'] ?? true;
-          });
+      List<String> pincodesList = [];
+      if (data['pincodes'] != null && (data['pincodes'] as List).isNotEmpty) {
+        pincodesList = List<String>.from(data['pincodes']);
+      } else if (data['pincode'] != null && data['pincode'].toString().isNotEmpty) {
+        pincodesList = [data['pincode'].toString()];
+      }
 
-          if (technicianCategories.isNotEmpty && technicianPincodes.isNotEmpty) {
-            await _fetchPendingRequests();
-          } else {
-            if (!_isActive || !mounted) return;
-            setState(() {
-              isLoading = false;
-            });
-            _showIncompleteProfileDialog();
-          }
-        } else {
-          if (!_isActive || !mounted) return;
-          setState(() {
-            isLoading = false;
-          });
-          _showIncompleteProfileDialog();
-        }
+      if (!_isActive || !mounted) return;
+
+      setState(() {
+        technicianName = data['name'] ?? 'Technician';
+        technicianCategories = List<String>.from(data['categories'] ?? []);
+        technicianPincodes = pincodesList;
+        isAvailable = data['isActive'] ?? true;
+      });
+
+      if (technicianCategories.isNotEmpty && technicianPincodes.isNotEmpty) {
+        _setupRealTimeStream();
+      } else {
+        if (!_isActive || !mounted) return;
+        setState(() {
+          isLoading = false;
+        });
+        _showIncompleteProfileDialog();
       }
     } catch (e) {
-      print('Error fetching technician data: $e');
+      print('❌ Error fetching technician data: $e');
       if (!_isActive || !mounted) return;
       setState(() {
         isLoading = false;
@@ -92,7 +113,8 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     }
   }
 
-  Future<void> _fetchPendingRequests() async {
+  // ================= SETUP REAL-TIME STREAM =================
+  void _setupRealTimeStream() {
     if (technicianCategories.isEmpty || technicianPincodes.isEmpty) {
       if (!_isActive || !mounted) return;
       setState(() {
@@ -102,35 +124,68 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     }
 
     try {
-      QuerySnapshot snapshot = await FirebaseFirestore.instance
+      _requestsStream = FirebaseFirestore.instance
           .collection('service_requests')
           .where('status', isEqualTo: 'pending')
           .where('technicianId', isNull: true)
           .orderBy('createdAt', descending: true)
-          .get();
+          .snapshots()
+          .map((QuerySnapshot<Map<String, dynamic>> snapshot) {
+        final filteredDocs = snapshot.docs.where((doc) {
+          final data = doc.data();
+          final serviceType = data['serviceType']?.toString() ?? '';
+          final customerPincode = data['pincode']?.toString() ?? '';
 
-      final filteredRequests = snapshot.docs.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        final serviceType = data['serviceType'] ?? '';
-        final customerPincode = data['pincode']?.toString() ?? '';
+          final categoryMatches = technicianCategories.contains(serviceType);
+          final pincodeMatches = technicianPincodes.contains(customerPincode);
 
-        final categoryMatches = technicianCategories.contains(serviceType);
-        final pincodeMatches = technicianPincodes.contains(customerPincode);
+          return categoryMatches && pincodeMatches;
+        }).toList();
 
-        return categoryMatches && pincodeMatches;
-      }).toList();
+        print('📊 Filtered Docs Count: ${filteredDocs.length}');
+        print('📊 Last Request Count: $_lastRequestCount');
+
+        if (_isFirstSnapshot) {
+          _lastRequestCount = filteredDocs.length;
+          _isFirstSnapshot = false;
+          print('📊 First snapshot, count: $_lastRequestCount');
+        } else {
+          if (filteredDocs.length > _lastRequestCount && filteredDocs.isNotEmpty) {
+            final newRequest = filteredDocs.first;
+            final data = newRequest.data();
+
+            print('🔔 NEW REQUEST DETECTED!');
+            print('📦 Request ID: ${data['requestId']}');
+            print('📦 Service Name: ${data['serviceName']}');
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showNewTaskPopup(data);
+              }
+            });
+          }
+          _lastRequestCount = filteredDocs.length;
+        }
+
+        if (mounted) {
+          setState(() {
+            totalPending = filteredDocs.length;
+          });
+        }
+
+        return filteredDocs;
+      });
 
       if (!_isActive || !mounted) return;
-
       setState(() {
-        pendingRequests = filteredRequests;
-        totalPending = filteredRequests.length;
         isLoading = false;
       });
 
-      print('📊 Found ${filteredRequests.length} matching requests');
+      print('✅ Real-time stream setup complete');
+      print('📊 Categories: ${technicianCategories.join(", ")}');
+      print('📊 Pincodes: ${technicianPincodes.join(", ")}');
     } catch (e) {
-      print('Error fetching pending requests: $e');
+      print('❌ Error setting up stream: $e');
       if (!_isActive || !mounted) return;
       setState(() {
         isLoading = false;
@@ -138,6 +193,189 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     }
   }
 
+  // ================= POPUP FUNCTIONS =================
+  void _showNewTaskPopup(Map<String, dynamic> data) {
+    if (!mounted || _isPopupShowing) return;
+
+    _isPopupShowing = true;
+    final String requestId = data['requestId'] ?? '';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.notifications_active,
+                  color: Colors.green,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  "New Service Request",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                data['serviceName'] ?? 'Service Request',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Color(0xFF0C1B4D),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildPopupDetailRow('Customer', data['userName'] ?? 'N/A'),
+              const SizedBox(height: 6),
+              _buildPopupDetailRow('Phone', data['userPhone'] ?? 'N/A'),
+              const SizedBox(height: 6),
+              _buildPopupDetailRow('Budget', '₹${data['budget'] ?? 0}'),
+              const SizedBox(height: 6),
+              _buildPopupDetailRow('Location', data['location'] ?? 'N/A'),
+              const SizedBox(height: 6),
+              _buildPopupDetailRow('Pincode', data['pincode'] ?? 'N/A'),
+              if (data['issue'] != null && data['issue'].isNotEmpty) ...[
+                const SizedBox(height: 6),
+                _buildPopupDetailRow('Issue', data['issue']),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _isPopupShowing = false;
+                Navigator.pop(context);
+                setState(() {
+                  _highlightedRequestId = null;
+                  _shouldHighlight = false;
+                });
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text(
+                'Close',
+                style: TextStyle(fontSize: 15),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _isPopupShowing = false;
+                Navigator.pop(context);
+
+                setState(() {
+                  _highlightedRequestId = requestId;
+                  _shouldHighlight = true;
+                });
+
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _scrollToHighlightedCard();
+                });
+
+                Future.delayed(const Duration(seconds: 30), () {
+                  if (mounted) {
+                    setState(() {
+                      _highlightedRequestId = null;
+                      _shouldHighlight = false;
+                    });
+                  }
+                });
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('🔍 New task highlighted in green!'),
+                    backgroundColor: Color(0xFF2563EB),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'View Now',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    ).then((_) {
+      _isPopupShowing = false;
+    });
+  }
+
+  void _scrollToHighlightedCard() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOut,
+        );
+        print('📜 Scrolled to highlighted card');
+      }
+    });
+  }
+
+  Widget _buildPopupDetailRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 70,
+          child: Text(
+            '$label:',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[600],
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF0C1B4D),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= ACCEPT REQUEST =================
   Future<void> _acceptRequest(String requestId, Map<String, dynamic> requestData) async {
     try {
       User? user = FirebaseAuth.instance.currentUser;
@@ -161,6 +399,23 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      final pendingDoc = await FirebaseFirestore.instance
+          .collection('technician_pending_requests')
+          .doc('${user.uid}_$requestId')
+          .get();
+
+      if (pendingDoc.exists) {
+        await pendingDoc.reference.delete();
+      }
+
+      await OneSignalNotificationService.sendRequestAcceptedNotification(
+        customerId: requestData['userId'],
+        technicianName: technicianName ?? 'Technician',
+        technicianPhone: user.phoneNumber ?? '',
+        requestId: requestId,
+        serviceName: requestData['serviceName'] ?? 'Service',
+      );
+
       await FirebaseFirestore.instance.collection('notifications').add({
         'userId': requestData['userId'],
         'userRole': 'customer',
@@ -174,28 +429,36 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'userId': user.uid,
+        'userRole': 'technician',
+        'title': '✅ Request Accepted Successfully!',
+        'body': 'You have accepted the service request from ${requestData['userName']}.',
+        'type': 'task_accepted',
+        'requestId': requestId,
+        'customerName': requestData['userName'],
+        'customerPhone': requestData['userPhone'],
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
       if (!_isActive || !mounted) {
         Navigator.pop(context);
         return;
       }
 
-      setState(() {
-        pendingRequests.removeWhere((doc) => doc.id == requestId);
-        totalPending = pendingRequests.length;
-      });
-
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Service request accepted successfully!'),
+          content: Text('✅ Service request accepted successfully!'),
           backgroundColor: Colors.green,
         ),
       );
 
     } catch (e) {
       Navigator.pop(context);
-      print('Error accepting request: $e');
+      print('❌ Error accepting request: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error accepting request: $e'),
@@ -205,8 +468,16 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     }
   }
 
+  // ================= REJECT REQUEST =================
   Future<void> _rejectRequest(String requestId) async {
     try {
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('service_requests')
+          .doc(requestId)
+          .get();
+
+      final requestData = requestDoc.data() as Map<String, dynamic>;
+
       await FirebaseFirestore.instance
           .collection('service_requests')
           .doc(requestId)
@@ -215,12 +486,24 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      if (!_isActive || !mounted) return;
+      await OneSignalNotificationService.sendRequestRejectedNotification(
+        customerId: requestData['userId'],
+        requestId: requestId,
+        serviceName: requestData['serviceName'] ?? 'Service',
+      );
 
-      setState(() {
-        pendingRequests.removeWhere((doc) => doc.id == requestId);
-        totalPending = pendingRequests.length;
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'userId': requestData['userId'],
+        'userRole': 'customer',
+        'title': '❌ Request Rejected',
+        'body': 'Your service request has been rejected. You can post a new request.',
+        'type': 'request_rejected',
+        'requestId': requestId,
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
       });
+
+      if (!_isActive || !mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -230,7 +513,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
       );
 
     } catch (e) {
-      print('Error rejecting request: $e');
+      print('❌ Error rejecting request: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error rejecting request: $e'),
@@ -240,6 +523,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     }
   }
 
+  // ================= TOGGLE AVAILABILITY =================
   Future<void> _toggleAvailability(bool value) async {
     try {
       User? user = FirebaseAuth.instance.currentUser;
@@ -260,27 +544,27 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
       });
 
       if (value) {
-        await _fetchPendingRequests();
+        _setupRealTimeStream();
       } else {
-        if (!_isActive || !mounted) return;
         setState(() {
-          pendingRequests = [];
+          _requestsStream = null;
           totalPending = 0;
         });
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(value ? 'You are now available for service' : 'You are now offline'),
+          content: Text(value ? '✅ You are now available for service' : 'You are now offline'),
           backgroundColor: value ? Colors.green : Colors.orange,
         ),
       );
 
     } catch (e) {
-      print('Error toggling availability: $e');
+      print('❌ Error toggling availability: $e');
     }
   }
 
+  // ================= SHOW DIALOGS =================
   void _showIncompleteProfileDialog() {
     showDialog(
       context: context,
@@ -292,15 +576,11 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
             child: const Text('Later'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2563EB),
             ),
@@ -311,6 +591,346 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
+  void _showAcceptDialog(String requestId, Map<String, dynamic> data) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Accept Request'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Are you sure you want to accept this service request?'),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Service: ${data['serviceName']}'),
+                  const SizedBox(height: 4),
+                  Text('Budget: ₹${data['budget']}'),
+                  const SizedBox(height: 4),
+                  Text('Customer: ${data['userName']}'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _acceptRequest(requestId, data);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+            ),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRejectDialog(String requestId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject Request'),
+        content: const Text('Are you sure you want to reject this request?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _rejectRequest(requestId);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🔥 ==================== SHOW REQUEST DETAILS WITH VIDEO ====================
+  void _showRequestDetails(String requestId, Map<String, dynamic> data) {
+    final String videoId = data['videoId'] ?? '';
+    final bool hasVideo = videoId.isNotEmpty;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(data['serviceName'] ?? 'Service Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 🔥 VIDEO SECTION IN DETAILS
+              if (hasVideo)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: Row(
+                          children: [
+                            // Icon(Icons.video_library, color: Colors.red, size: 20),
+                            // SizedBox(width: 8),
+                            // Text(
+                            //   '📺 Tutorial Video',
+                            //   style: TextStyle(
+                            //     fontWeight: FontWeight.bold,
+                            //     fontSize: 14,
+                            //   ),
+                            // ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => _openYouTubeVideo(videoId),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Image.network(
+                              'https://img.youtube.com/vi/$videoId/maxresdefault.jpg',
+                              height: 160,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  height: 160,
+                                  color: Colors.grey.shade200,
+                                  child: const Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 160,
+                                  color: Colors.grey.shade200,
+                                  child: const Center(
+                                    child: Text('Video not available'),
+                                  ),
+                                );
+                              },
+                            ),
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.play_arrow,
+                                size: 35,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // Details
+              _buildDetailRow('Customer Name', data['userName'] ?? 'N/A'),
+              const SizedBox(height: 8),
+              _buildDetailRow('Phone', data['userPhone'] ?? 'N/A'),
+              const SizedBox(height: 8),
+              _buildDetailRow('Email', data['userEmail'] ?? 'N/A'),
+              const SizedBox(height: 8),
+              _buildDetailRow('Service Type', data['serviceType'] ?? 'N/A'),
+              const SizedBox(height: 8),
+              _buildDetailRow('Location', data['location'] ?? 'N/A'),
+              const SizedBox(height: 8),
+              _buildDetailRow('Pincode', data['pincode'] ?? 'N/A'),
+              const SizedBox(height: 8),
+              _buildDetailRow('Budget', '₹${data['budget'] ?? 0}'),
+              const SizedBox(height: 8),
+              _buildDetailRow('Issue', data['issue'] ?? 'N/A'),
+              if (data['additionalNote'] != null && data['additionalNote'].isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _buildDetailRow('Additional Note', data['additionalNote']),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          if (hasVideo)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _openYouTubeVideo(videoId);
+              },
+              icon: const Icon(Icons.play_circle, size: 18),
+              label: const Text('Watch Video'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // 🔥 ==================== OPEN YOUTUBE VIDEO ====================
+  void _openYouTubeVideo(String videoId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => YouTubeVideoPlayerScreen(videoId: videoId),
+      ),
+    );
+  }
+
+  // 🔥 ==================== VIDEO THUMBNAIL (FOR REQUEST CARD) ====================
+  Widget _buildVideoThumbnail(String videoId) {
+    return GestureDetector(
+      onTap: () => _openYouTubeVideo(videoId),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(6.0),
+              child: Row(
+                children: [
+                  // Icon(Icons.video_library, color: Colors.red, size: 16),
+                  // SizedBox(width: 6),
+                  // Text(
+                  //   '📺 Tutorial Video',
+                  //   style: TextStyle(
+                  //     fontWeight: FontWeight.w600,
+                  //     fontSize: 12,
+                  //   ),
+                  // ),
+                ],
+              ),
+            ),
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(12),
+                bottomRight: Radius.circular(12),
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Image.network(
+                    'https://img.youtube.com/vi/$videoId/maxresdefault.jpg',
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        height: 120,
+                        color: Colors.grey.shade200,
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        height: 120,
+                        color: Colors.grey.shade200,
+                        child: const Center(
+                          child: Text('Video not available'),
+                        ),
+                      );
+                    },
+                  ),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow,
+                      size: 28,
+                      color: Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 110,
+          child: Text(
+            '$label:',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= BUILD UI =================
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -318,16 +938,63 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: _fetchPendingRequests,
+      onRefresh: () async {
+        _fetchTechnicianData();
+      },
       child: SingleChildScrollView(
+        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         child: Column(
           children: [
             _buildWelcomeBanner(),
+            _buildInBetweenBanner(),
             _buildAvailabilityToggle(),
             _buildStatsCards(),
             _buildPendingRequests(),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInBetweenBanner() {
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 5),
+        width: double.infinity,
+        height: 185,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.asset(
+            'assets/AppLogoo/abservice.PNG',
+            width: double.infinity,
+            height: 140,
+            fit: BoxFit.fill,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                width: double.infinity,
+                height: 140,
+                color: Colors.grey.shade200,
+                child: const Center(
+                  child: Text(
+                    'Banner not found',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -448,7 +1115,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
               'Pending Tasks',
               totalPending.toString(),
               Icons.pending_actions,
-              Colors.orange,
+              totalPending > 0 ? Colors.orange : Colors.grey,
             ),
           ),
           const SizedBox(width: 12),
@@ -508,6 +1175,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
+  // ================= PENDING REQUESTS (REAL-TIME) =================
   Widget _buildPendingRequests() {
     if (technicianCategories.isEmpty || technicianPincodes.isEmpty) {
       return _buildIncompleteProfileWidget();
@@ -517,54 +1185,113 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
       return _buildOfflineWidget();
     }
 
+    if (_requestsStream == null) {
+      return _buildEmptyWidget();
+    }
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Available Service Requests',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tasks matching your categories and service areas',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 16),
-          if (pendingRequests.isEmpty)
-            _buildEmptyWidget()
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: pendingRequests.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                var request = pendingRequests[index];
-                return _buildRequestCard(request);
-              },
-            ),
-        ],
+        const Text(
+        'Available Service Requests',
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
+      const SizedBox(height: 8),
+      Text(
+        'Tasks matching your categories and service areas (auto-refresh)',
+        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+      ),
+      const SizedBox(height: 16),
+
+      StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+        stream: _requestsStream,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                children: [
+                  Icon(Icons.error_outline, size: 40, color: Colors.red[400]),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    style: TextStyle(color: Colors.red[400]),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: _setupRealTimeStream,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32.0),
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return _buildEmptyWidget();
+          }
+
+          final pendingRequests = snapshot.data!;
+
+          return ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: pendingRequests.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              var request = pendingRequests[index];
+              return _buildRequestCard(request);
+            },
+          );
+        },
+      ),
+      ]
+    ),
     );
   }
 
-  // ✅ Updated Request Card with 3-minute countdown timer
-  Widget _buildRequestCard(QueryDocumentSnapshot request) {
-    Map<String, dynamic> data = request.data() as Map<String, dynamic>;
+  // ================= REQUEST CARD WITH VIDEO BELOW DIVIDER =================
+  Widget _buildRequestCard(QueryDocumentSnapshot<Map<String, dynamic>> request) {
+    Map<String, dynamic> data = request.data();
     final createdAt = (data['createdAt'] as Timestamp).toDate();
+
+    final bool isHighlighted = _highlightedRequestId != null &&
+        _shouldHighlight &&
+        _highlightedRequestId == request.id;
+
+    if (isHighlighted) {
+      print('🟢 HIGHLIGHTED CARD: ${request.id}');
+    }
+
+    // 🔥 Get videoId from data
+    final String videoId = data['videoId'] ?? '';
+    final bool hasVideo = videoId.isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isHighlighted ? Colors.green.shade50 : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(
+          color: isHighlighted ? Colors.green : Colors.grey.shade200,
+          width: isHighlighted ? 3 : 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.05),
-            blurRadius: 5,
+            color: isHighlighted
+                ? Colors.green.withOpacity(0.4)
+                : Colors.grey.withOpacity(0.05),
+            blurRadius: isHighlighted ? 15 : 5,
             offset: const Offset(0, 2),
           ),
         ],
@@ -572,11 +1299,13 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with timer
+          // Header
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: isHighlighted
+                  ? Colors.green.shade100
+                  : Colors.grey.shade50,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -585,19 +1314,40 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'New Request',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey,
-                  ),
+                Row(
+                  children: [
+                    if (isHighlighted) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'NEW',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Text(
+                      'New Request',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isHighlighted ? Colors.green : Colors.grey,
+                      ),
+                    ),
+                  ],
                 ),
                 _buildCountdownTimer(createdAt),
               ],
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -608,10 +1358,10 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        data['serviceName'] ?? 'Service Request',
+                        data['Washing Machine Deep Cleaning'] ?? 'Washing Machine Deep Cleaning',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
+                          fontSize: 14,
                         ),
                       ),
                     ),
@@ -628,6 +1378,14 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                 const SizedBox(height: 12),
                 const Divider(),
                 const SizedBox(height: 12),
+
+                // 🔥 ==================== VIDEO SECTION (BELOW DIVIDER) ====================
+                if (hasVideo) ...[
+                  _buildVideoThumbnail(videoId),
+                  const SizedBox(height: 12),
+                ],
+
+                // Customer Details
                 Row(
                   children: [
                     const Icon(Icons.person_outline, size: 16, color: Colors.grey),
@@ -717,7 +1475,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                         child: const Text('View Details'),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () {
@@ -727,10 +1485,10 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                           backgroundColor: Colors.green,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: const Text('Accept'),
+                        child: const Text('Accept', style: TextStyle(color: Colors.white)),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () {
@@ -754,7 +1512,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
-  // ✅ 3-Minute Countdown Timer Widget (Shows 0:00 when expired)
+  // ================= COUNTDOWN TIMER =================
   Widget _buildCountdownTimer(DateTime createdAt) {
     return StatefulBuilder(
       builder: (context, setStateTimer) {
@@ -767,7 +1525,6 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
             final remaining = expiryTime.difference(now);
 
             if (remaining.isNegative) {
-              // Show "0:00" when expired (not hide)
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -795,7 +1552,6 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
             final minutes = remaining.inMinutes;
             final seconds = remaining.inSeconds.remainder(60);
 
-            // Color changes based on time left
             Color timerColor;
             if (minutes >= 2) {
               timerColor = Colors.green;
@@ -833,145 +1589,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
-  void _showAcceptDialog(String requestId, Map<String, dynamic> data) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Accept Request'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Are you sure you want to accept this service request?'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Service: ${data['serviceName']}'),
-                  const SizedBox(height: 4),
-                  Text('Budget: ₹${data['budget']}'),
-                  const SizedBox(height: 4),
-                  Text('Customer: ${data['userName']}'),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _acceptRequest(requestId, data);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-            ),
-            child: const Text('Accept'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showRejectDialog(String requestId) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reject Request'),
-        content: const Text('Are you sure you want to reject this request?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _rejectRequest(requestId);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Reject'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showRequestDetails(String requestId, Map<String, dynamic> data) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(data['serviceName'] ?? 'Service Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildDetailRow('Customer Name', data['userName'] ?? 'N/A'),
-              const SizedBox(height: 8),
-              _buildDetailRow('Phone', data['userPhone'] ?? 'N/A'),
-              const SizedBox(height: 8),
-              _buildDetailRow('Email', data['userEmail'] ?? 'N/A'),
-              const SizedBox(height: 8),
-              _buildDetailRow('Service Type', data['serviceType'] ?? 'N/A'),
-              const SizedBox(height: 8),
-              _buildDetailRow('Location', data['location'] ?? 'N/A'),
-              const SizedBox(height: 8),
-              _buildDetailRow('Pincode', data['pincode'] ?? 'N/A'),
-              const SizedBox(height: 8),
-              _buildDetailRow('Budget', '₹${data['budget'] ?? 0}'),
-              const SizedBox(height: 8),
-              _buildDetailRow('Issue', data['issue'] ?? 'N/A'),
-              if (data['additionalNote'] != null && data['additionalNote'].isNotEmpty) ...[
-                const SizedBox(height: 8),
-                _buildDetailRow('Additional Note', data['additionalNote']),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 110,
-          child: Text(
-            '$label:',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 13),
-          ),
-        ),
-      ],
-    );
-  }
-
+  // ================= EMPTY STATE WIDGETS =================
   Widget _buildIncompleteProfileWidget() {
     return Container(
       margin: const EdgeInsets.all(16),
@@ -1043,7 +1661,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tasks matching your categories and pincode will appear here',
+            'Tasks matching your categories and pincode will appear here automatically',
             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
             textAlign: TextAlign.center,
           ),

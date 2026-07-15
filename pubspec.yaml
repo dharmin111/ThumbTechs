@@ -2,7 +2,7 @@ name: thumstechs
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+3
+version: 1.0.0+1
 
 environment:
   sdk: ^3.11.1
@@ -28,6 +28,8 @@ dependencies:
   cloud_functions: ^6.3.1
   onesignal_flutter: ^5.1.0
   flutter_launcher_icons: ^0.14.4
+  youtube_player_iframe: ^6.0.2
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:
@@ -76,10 +78,21 @@ flutter:
     - assets/revicon/location.png
     - assets/revicon/pincode.png
     - assets/revicon/serviceicon.png
+    - assets/revicon/pinnot.PNG
+    - assets/revicon/pino.PNG
+
     - assets/AppLogoo/AppLogo.PNG
+
+#    Special offer for washing machine
+    - assets/AppLogoo/specialoffer.png
+    - assets/AppLogoo/machine cleaning.PNG
+    - assets/AppLogoo/abservice.PNG
+
+
     - assets/AppLogoo/firststart.PNG
     - assets/AppLogoo/secondstart.PNG
     - assets/AppLogoo/thirdstart.PNG
+    - assets/AppLogoo/splash.PNG
 #    for Onboarding screens
     - assets/onboarding/cust1.png
     - assets/onboarding/cust2.png

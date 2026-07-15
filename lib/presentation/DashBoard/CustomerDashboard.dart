@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:thumstechs/presentation/CostomerScreens/ServiceBookingScreen.dart';
+import 'package:thumstechs/presentation/CostomerScreens/ServiceRequestDetailScreen.dart';
+import '../../Services/FirebaseMessageService.dart';
 import '../../Services/oneSignalNotificationService .dart';
-import '../CostomerScreens/BookingScreen.dart';
 import '../CostomerScreens/MyBookingsScreen.dart';
 import '../CostomerScreens/ProfileScreen.dart';
 import '../CostomerScreens/ServiceDetailScreen.dart';
+import '../authScreen/ChatListScreen.dart';
 import '../authScreen/LoginScreen.dart';
 
 const primaryCyan = Color(0xFF42D7D7);
@@ -30,12 +34,80 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
   bool isLoading = true;
   String searchQuery = '';
   int _selectedIndex = 0;
+  int _totalUnread = 0;
+
+  // ✅ Manual unread count update without stream
+  Timer? _unreadTimer;
 
   @override
   void initState() {
     super.initState();
     loadUserData();
     _ensureOneSignalId();
+    _startUnreadCountPolling(); // ✅ Start polling
+  }
+
+  void _startUnreadCountPolling() {
+    // ✅ Update every 3 seconds
+    _unreadTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      _fetchUnreadCount();
+    });
+    // Initial fetch
+    _fetchUnreadCount();
+  }
+
+  Future<void> _fetchUnreadCount() async {
+    try {
+      final currentUser = auth.currentUser;
+      if (currentUser == null) return;
+
+      // ✅ Query conversations where user is customer
+      final customerQuery = await firestore
+          .collection('conversations')
+          .where('customerId', isEqualTo: currentUser.uid)
+          .get();
+
+      // ✅ Query conversations where user is technician
+      final technicianQuery = await firestore
+          .collection('conversations')
+          .where('technicianId', isEqualTo: currentUser.uid)
+          .get();
+
+      int count = 0;
+
+      // ✅ Count customer unread
+      for (var doc in customerQuery.docs) {
+        final data = doc.data();
+        if (data['status'] == 'active') {
+          final unread = data['customerUnreadCount'] ?? 0;
+          count += unread is int ? unread : 0;
+        }
+      }
+
+      // ✅ Count technician unread
+      for (var doc in technicianQuery.docs) {
+        final data = doc.data();
+        if (data['status'] == 'active') {
+          final unread = data['technicianUnreadCount'] ?? 0;
+          count += unread is int ? unread : 0;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalUnread = count;
+        });
+        print('📊 Customer unread count fetched: $_totalUnread');
+      }
+    } catch (e) {
+      print('❌ Error fetching unread count: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _unreadTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _ensureOneSignalId() async {
@@ -109,7 +181,6 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
   }
 
   void _showNotifications() {
-    // TODO: Implement notification screen
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Notifications coming soon!'),
@@ -118,20 +189,19 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     );
   }
 
-  // Original Home Screen Content - Keeping same UI
+  // ==================== HOME SCREEN ====================
   Widget _buildHomeScreen() {
     return Scaffold(
       backgroundColor: background,
       body: SafeArea(
         child: Column(
           children: [
-            // Header Section - Thumb Tech Name and Notification Bell
+            // Header Section
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Thumb Tech Name
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -154,8 +224,6 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                       ),
                     ],
                   ),
-
-                  // Notification Bell Icon
                   GestureDetector(
                     onTap: _showNotifications,
                     child: Container(
@@ -164,36 +232,17 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                         color: Colors.grey.shade100,
                         shape: BoxShape.circle,
                       ),
-                      child: Stack(
-                        children: [
-                          Icon(
-                            Icons.notifications_none,
-                            color: darkBlue,
-                            size: 24,
-                          ),
-                          // Optional: Unread notification badge
-                          // Positioned(
-                          //   right: 0,
-                          //   top: 0,
-                          //   child: Container(
-                          //     width: 10,
-                          //     height: 10,
-                          //     decoration: const BoxDecoration(
-                          //       color: Colors.red,
-                          //       shape: BoxShape.circle,
-                          //     ),
-                          //   ),
-                          // ),
-                        ],
+                      child: Icon(
+                        Icons.notifications_none,
+                        color: darkBlue,
+                        size: 24,
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 10),
-
             // Search Bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -225,10 +274,8 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                 ),
               ),
             ),
-
             const SizedBox(height: 20),
-
-            // Categories Section - Scrollable
+            // Categories Section
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -246,8 +293,8 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     );
   }
 
+  // ==================== CATEGORY SECTION ====================
   Widget _buildCategorySection() {
-    // Appliance Repair Services with different images
     List<Map<String, String>> applianceServices = [
       {'name': 'AC Repair & Service', 'image': 'assets/Appliance/Ac.jpeg'},
       {'name': 'Washing Machine Repair', 'image': 'assets/Appliance/Ap1.png'},
@@ -257,7 +304,6 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
       {'name': 'Geyser Repair', 'image': 'assets/Appliance/ap3.png'},
     ];
 
-    // Home Repair Services with different images
     List<Map<String, String>> homeServices = [
       {'name': 'CCTV Installation & Services', 'image': 'assets/Appliance/hm1.png'},
       {'name': 'TV Repair', 'image': 'assets/Appliance/ap8.png'},
@@ -269,7 +315,6 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
       {'name': 'Electrical Work', 'image': 'assets/Appliance/elec1.png'},
     ];
 
-    // Filter based on search query
     if (searchQuery.isNotEmpty) {
       applianceServices = applianceServices
           .where((service) =>
@@ -293,10 +338,10 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Three Pictures Row - Horizontally Scrollable (only show when not searching)
+        // Promo Images
         if (searchQuery.isEmpty)
           SizedBox(
-            height: 170,
+            height: 180,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(),
@@ -312,10 +357,11 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
               },
             ),
           ),
-
-        if (searchQuery.isEmpty) const SizedBox(height: 18),
-
-        // Appliance Repair & Service - Title
+        if (searchQuery.isEmpty) const SizedBox(height: 9),
+        // Special Offer Banner
+        if (searchQuery.isEmpty) _buildSpecialOfferBanner(),
+        if (searchQuery.isEmpty) const SizedBox(height: 14),
+        // Appliance Repair & Service
         if (applianceServices.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -328,10 +374,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
               ),
             ),
           ),
-
         if (applianceServices.isNotEmpty) const SizedBox(height: 16),
-
-        // 2 Column Grid for Appliance Services
         if (applianceServices.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -346,18 +389,16 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
               ),
               itemCount: applianceServices.length,
               itemBuilder: (context, index) {
-                return _buildImageOnly(
+                return _buildServiceTile(
                   serviceName: applianceServices[index]['name']!,
                   imagePath: applianceServices[index]['image']!,
                 );
               },
             ),
           ),
-
         if (applianceServices.isNotEmpty && homeServices.isNotEmpty)
           const SizedBox(height: 20),
-
-        // Home Repair & Installation - Title
+        // Home Repair & Installation
         if (homeServices.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -370,10 +411,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
               ),
             ),
           ),
-
         if (homeServices.isNotEmpty) const SizedBox(height: 16),
-
-        // 2 Column Grid for Home Services
         if (homeServices.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -388,20 +426,67 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
               ),
               itemCount: homeServices.length,
               itemBuilder: (context, index) {
-                return _buildImageOnly(
+                return _buildServiceTile(
                   serviceName: homeServices[index]['name']!,
                   imagePath: homeServices[index]['image']!,
                 );
               },
             ),
           ),
-
         const SizedBox(height: 12),
       ],
     );
   }
 
-  Widget _buildImageOnly({required String serviceName, required String imagePath}) {
+  // ==================== SPECIAL OFFER BANNER ====================
+  Widget _buildSpecialOfferBanner() {
+    return GestureDetector(
+      onTap: _onBannerTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 5),
+        width: double.infinity,
+        height: 110,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.asset(
+            'assets/AppLogoo/specialoffer.png',
+            width: double.infinity,
+            height: 108,
+            fit: BoxFit.fill,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                width: double.infinity,
+                height: 108,
+                color: Colors.grey.shade200,
+                child: const Center(
+                  child: Text(
+                    'Banner not found',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==================== SERVICE TILE ====================
+  Widget _buildServiceTile({
+    required String serviceName,
+    required String imagePath,
+  }) {
     return GestureDetector(
       onTap: () {
         onServiceTap(serviceName);
@@ -455,6 +540,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     );
   }
 
+  // ==================== PROMO IMAGE ====================
   Widget _buildPromoImage(String imagePath) {
     return GestureDetector(
       onTap: () {
@@ -506,6 +592,55 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
     );
   }
 
+  // ==================== BANNER TAP HANDLER ====================
+  void _onBannerTap() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please login first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final String requestId = 'SP_${DateTime.now().millisecondsSinceEpoch}';
+
+    final Map<String, dynamic> specialOfferData = {
+      'serviceName': 'Washing Machine Repair',
+      'requestId': requestId,
+      'userId': user.uid,
+      'userName': getUserName(),
+      'userPhone': userData?['phone'] ?? '',
+      'userEmail': user.email ?? '',
+      'location': '',
+      'pincode': '',
+      'budget': 999,
+      'serviceType': 'Washing Machine Repair',
+      'preferredDate': '',
+      'preferredTime': '',
+      'issue': '',
+      'createdAt': DateTime.now(),
+      'distance': '',
+      'duration': '',
+      'videoId': '4W5nWPEoy7Y',
+      'status': 'pending',
+      'isFromBanner': true,
+    };
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ServiceRequestDetailScreen(
+          requestId: requestId,
+          requestData: specialOfferData,
+        ),
+      ),
+    );
+  }
+
+  // ==================== BUILD ====================
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -515,59 +650,111 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
       );
     }
 
-    // List of screens for each tab
     final List<Widget> _screens = [
-      _buildHomeScreen(),        // Home (index 0) - Your original UI
-      const ServiceBookingScreen(),     // Booking (index 1)
-      const MyBookingsScreen(),  // My Bookings (index 2)
-      const ProfileScreen(),     // Profile (index 3)
+      _buildHomeScreen(),
+      const ServiceBookingScreen(),
+      const MyBookingsScreen(),
+      const ChatListScreen(),
+      const ProfileScreen(),
     ];
 
     return Scaffold(
       body: _screens[_selectedIndex],
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -5),
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        backgroundColor: Colors.white,
+        selectedItemColor: primaryCyan,
+        unselectedItemColor: darkBlue.withOpacity(0.5),
+        selectedFontSize: 12,
+        unselectedFontSize: 12,
+        elevation: 0,
+        items: [
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.book_online_outlined),
+            activeIcon: Icon(Icons.book_online),
+            label: 'Booking',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.list_alt_outlined),
+            activeIcon: Icon(Icons.list_alt),
+            label: 'My Bookings',
+          ),
+          BottomNavigationBarItem(
+            icon: Stack(
+              children: [
+                const Icon(Icons.chat_bubble_outline),
+                if (_totalUnread > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Text(
+                        _totalUnread > 99 ? '99+' : _totalUnread.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          backgroundColor: Colors.white,
-          selectedItemColor: primaryCyan,
-          unselectedItemColor: darkBlue.withOpacity(0.5),
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Home',
+            activeIcon: Stack(
+              children: [
+                const Icon(Icons.chat),
+                if (_totalUnread > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Text(
+                        _totalUnread > 99 ? '99+' : _totalUnread.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.book_online_outlined),
-              activeIcon: Icon(Icons.book_online),
-              label: 'Booking',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.list_alt_outlined),
-              activeIcon: Icon(Icons.list_alt),
-              label: 'My Bookings',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
-        ),
+            label: 'Chat',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
       ),
     );
   }

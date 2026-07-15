@@ -1,13 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
+
+<!-- Camera -->
+<key>NSCameraUsageDescription</key>
+<string>This app requires camera access to capture photos and videos.</string>
+
+<!-- Photo Library -->
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app requires access to your photo library to select photos and videos.</string>
+
+<!-- Save to Gallery -->
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>This app requires permission to save photos and videos.</string>
+
+<!-- Microphone (for video recording) -->
+<key>NSMicrophoneUsageDescription</key>
+<string>This app requires microphone access while recording videos.</string>
+
+<!-- Notifications -->
+<key>NSUserNotificationsUsageDescription</key>
+<string>This app would like to send you notifications.</string>
+
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Thumstechs</string>
+	<string>ThumbTech</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

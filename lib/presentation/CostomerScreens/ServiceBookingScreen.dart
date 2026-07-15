@@ -1,9 +1,11 @@
 // lib/presentation/CostomerScreens/ServiceBookingScreen.dart
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../Services/FirebaseFirestoreStorageCustomerOrder.dart';
 import '../../model/ServiceRequestModel.dart';
+import '../DashBoard/CustomerDashboard.dart';
 import '../authScreen/ChatScreen.dart';
 
 const primaryCyan = Color(0xFF42D7D7);
@@ -29,7 +31,7 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
   void initState() {
     super.initState();
     _userId = _firebaseService.getCurrentUserId();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -38,121 +40,154 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
     super.dispose();
   }
 
+  void _goToDashboard() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const CustomerDashboard()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_userId == null) {
       return _buildLoginRequiredScreen();
     }
 
-    return Scaffold(
-      backgroundColor: background,
-      appBar: AppBar(
-        title: const Text(
-          'Active Bookings',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: darkBlue,
+    return WillPopScope(
+      onWillPop: () async {
+        _goToDashboard();
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: background,
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: darkBlue),
+            onPressed: _goToDashboard,
+          ),
+          title: const Text(
+            'Active Bookings',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: darkBlue,
+            ),
+          ),
+          backgroundColor: background,
+          elevation: 0,
+          centerTitle: true,
+          bottom: TabBar(
+            controller: _tabController,
+            labelColor: primaryCyan,
+            unselectedLabelColor: darkBlue.withOpacity(0.5),
+            indicatorColor: primaryCyan,
+            tabs: const [
+              Tab(text: 'Pending'),
+              Tab(text: 'Accepted'),
+              Tab(text: 'Rejected'),
+            ],
           ),
         ),
-        backgroundColor: background,
-        elevation: 0,
-        centerTitle: true,
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: primaryCyan,
-          unselectedLabelColor: darkBlue.withOpacity(0.5),
-          indicatorColor: primaryCyan,
-          tabs: const [
-            Tab(text: 'Pending'),
-            Tab(text: 'Accepted'),
-          ],
-        ),
-      ),
-      body: StreamBuilder<List<ServiceRequestModel>>(
-        stream: _firebaseService.getUserServiceRequests(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _buildErrorState(snapshot.error.toString());
-          }
+        body: StreamBuilder<List<ServiceRequestModel>>(
+          stream: _firebaseService.getUserServiceRequests(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _buildErrorState(snapshot.error.toString());
+            }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(primaryCyan),
-              ),
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(primaryCyan),
+                ),
+              );
+            }
+
+            final allBookings = snapshot.data ?? [];
+
+            final pendingBookings = allBookings
+                .where((booking) => booking.status.toLowerCase() == 'pending')
+                .toList();
+            final acceptedBookings = allBookings
+                .where((booking) => booking.status.toLowerCase() == 'accepted')
+                .toList();
+            final rejectedBookings = allBookings
+                .where((booking) => booking.status.toLowerCase() == 'rejected' ||
+                booking.status.toLowerCase() == 'cancelled')
+                .toList();
+
+            return TabBarView(
+              controller: _tabController,
+              children: [
+                _buildBookingList(pendingBookings, 'pending'),
+                _buildBookingList(acceptedBookings, 'accepted'),
+                _buildBookingList(rejectedBookings, 'rejected'),
+              ],
             );
-          }
-
-          final allBookings = snapshot.data ?? [];
-
-          final pendingBookings = allBookings
-              .where((booking) => booking.status.toLowerCase() == 'pending')
-              .toList();
-          final acceptedBookings = allBookings
-              .where((booking) => booking.status.toLowerCase() == 'accepted')
-              .toList();
-
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              _buildBookingList(pendingBookings, 'pending'),
-              _buildBookingList(acceptedBookings, 'accepted'),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }
 
   Widget _buildLoginRequiredScreen() {
-    return Scaffold(
-      backgroundColor: background,
-      appBar: AppBar(
-        title: const Text(
-          'Active Bookings',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: darkBlue,
-          ),
-        ),
+    return WillPopScope(
+      onWillPop: () async {
+        _goToDashboard();
+        return false;
+      },
+      child: Scaffold(
         backgroundColor: background,
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.login_outlined,
-              size: 80,
-              color: darkBlue.withOpacity(0.3),
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: darkBlue),
+            onPressed: _goToDashboard,
+          ),
+          title: const Text(
+            'Active Bookings',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: darkBlue,
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Please login to view your bookings',
-              style: TextStyle(
-                fontSize: 16,
-                color: darkBlue.withOpacity(0.6),
+          ),
+          backgroundColor: background,
+          elevation: 0,
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.login_outlined,
+                size: 80,
+                color: darkBlue.withOpacity(0.3),
               ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/login');
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryCyan,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+              const SizedBox(height: 16),
+              Text(
+                'Please login to view your bookings',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: darkBlue.withOpacity(0.6),
                 ),
               ),
-              child: const Text('Login'),
-            ),
-          ],
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/login');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryCyan,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Login'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -218,6 +253,11 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
         title = 'No Accepted Bookings';
         subtitle = 'Your accepted service requests will appear here';
         break;
+      case 'rejected':
+        iconData = '❌';
+        title = 'No Rejected Bookings';
+        subtitle = 'Your rejected service requests will appear here';
+        break;
       default:
         iconData = '📦';
         title = 'No Bookings';
@@ -254,7 +294,6 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
     );
   }
 
-// Safe date formatter that handles Timestamp, DateTime, and null values
   String _formatDate(dynamic dateValue) {
     if (dateValue == null) return 'Date not available';
 
@@ -279,14 +318,307 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
       return 'Invalid date';
     }
   }
+
+  // ==================== REPOST METHODS ====================
+
+  Future<void> _rePostRequest(String requestId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(primaryCyan),
+        ),
+      ),
+    );
+
+    try {
+      await _firebaseService.rePostRequest(
+        requestId: requestId,
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Request re-posted successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error re-posting: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showRePostDialog(String requestId, ServiceRequestModel booking) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.refresh, color: primaryCyan, size: 28),
+            SizedBox(width: 12),
+            Text(
+              'Repost Request',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: darkBlue,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Do you want to repost this request to find a new technician?',
+              style: TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.build, size: 16, color: darkBlue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          booking.serviceName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: darkBlue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.currency_rupee, size: 16, color: Colors.green),
+                      const SizedBox(width: 8),
+                      Text(
+                        '₹${booking.budget.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.green,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (booking.cancellationReason != null &&
+                      booking.cancellationReason!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: Colors.red),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Previous Reason: ${booking.cancellationReason}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue.shade700, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'New technicians will be notified about your request.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 15),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _rePostRequest(requestId);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryCyan,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text(
+              'Repost Now',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== CANCEL/REMOVE METHODS ====================
+
+  Future<void> _removeRequest(String requestId) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(primaryCyan),
+        ),
+      ),
+    );
+
+    try {
+      await _firebaseService.permanentlyDeleteRequest(requestId);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Request removed successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error removing request: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showRemoveDialog(String requestId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Text(
+              'Remove Request',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: darkBlue,
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to permanently remove this request? This action cannot be undone.',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(fontSize: 15),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _removeRequest(requestId);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text(
+              'Remove',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== BOOKING CARD ====================
+
   Widget _buildBookingCard(ServiceRequestModel booking, String status) {
     final statusColor = _getStatusColor(status);
     final statusIcon = _getStatusIcon(status);
     final statusText = _getStatusText(status);
 
-    String statusMessage = status == 'pending'
-        ? '⏳ Waiting for technician to accept your request'
-        : '✅ Technician has accepted your request. You can now chat with them.';
+    String statusMessage;
+    if (status == 'pending') {
+      statusMessage = '⏳ Waiting for technician to accept your request';
+    } else if (status == 'accepted') {
+      statusMessage = '✅ Technician has accepted your request. You can now chat with them.';
+    } else {
+      statusMessage = '❌ Your request has been rejected. You can repost it to find a new technician.';
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -389,7 +721,11 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
                   child: Row(
                     children: [
                       Icon(
-                        status == 'pending' ? Icons.hourglass_empty : Icons.check_circle,
+                        status == 'pending'
+                            ? Icons.hourglass_empty
+                            : status == 'accepted'
+                            ? Icons.check_circle
+                            : Icons.cancel,
                         size: 18,
                         color: statusColor,
                       ),
@@ -488,6 +824,38 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
                     ),
                   ),
 
+                // Rejection Info (only for rejected)
+                if (status == 'rejected' && booking.cancellationReason != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.red, size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Reason: ${booking.cancellationReason ?? "Not specified"}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 // Details
                 _buildDetailRow(
                   Icons.calendar_today,
@@ -550,7 +918,9 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
                   ),
                 ],
 
-                // Action Buttons
+                // ==================== ACTION BUTTONS ====================
+
+                // Pending: Cancel button
                 if (status == 'pending') ...[
                   const SizedBox(height: 16),
                   SizedBox(
@@ -570,6 +940,7 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
                   ),
                 ],
 
+                // Accepted: Chat button
                 if (status == 'accepted' && booking.technicianId != null) ...[
                   const SizedBox(height: 16),
                   SizedBox(
@@ -587,6 +958,46 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
                         ),
                       ),
                     ),
+                  ),
+                ],
+
+                // 🔥 Rejected: Repost and Remove buttons
+                if (status == 'rejected') ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showRePostDialog(booking.id!, booking),
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Repost'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: primaryCyan,
+                            side: const BorderSide(color: primaryCyan),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showRemoveDialog(booking.id!),
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          label: const Text('Remove'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ],
@@ -648,6 +1059,8 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
         return Colors.orange;
       case 'accepted':
         return Colors.green;
+      case 'rejected':
+        return Colors.red;
       default:
         return Colors.grey;
     }
@@ -659,6 +1072,8 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
         return Icons.hourglass_empty;
       case 'accepted':
         return Icons.check_circle;
+      case 'rejected':
+        return Icons.cancel;
       default:
         return Icons.info;
     }
@@ -670,6 +1085,8 @@ class _ServiceBookingScreenState extends State<ServiceBookingScreen>
         return 'Pending';
       case 'accepted':
         return 'Accepted';
+      case 'rejected':
+        return 'Rejected';
       default:
         return status.toUpperCase();
     }

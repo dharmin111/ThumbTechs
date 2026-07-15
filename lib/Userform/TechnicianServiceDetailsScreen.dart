@@ -4,8 +4,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:thumstechs/presentation/DashBoard/TechnicianDashboard.dart';
 import 'package:thumstechs/Services/FirebaseStorageService.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 import '../Services/FirebaseFirestoreService.dart';
+import '../../Services/oneSignalNotificationService .dart';
 
 class TechnicianServiceDetailsScreen extends StatefulWidget {
   final String name;
@@ -101,6 +104,46 @@ class _TechnicianServiceDetailsScreenState extends State<TechnicianServiceDetail
     super.dispose();
   }
 
+  // ✅ Save OneSignal ID for technician
+  Future<void> _saveTechnicianOneSignalId() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('❌ No user logged in');
+        return;
+      }
+
+      print('📱 Saving OneSignal ID for technician: ${user.uid}');
+
+      // Wait for OneSignal ID to be available (up to 5 seconds)
+      String? oneSignalId;
+      for (int i = 0; i < 10; i++) {
+        oneSignalId = OneSignal.User.pushSubscription.id;
+        if (oneSignalId != null && oneSignalId.isNotEmpty) {
+          break;
+        }
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      if (oneSignalId == null || oneSignalId.isEmpty) {
+        print('❌ OneSignal ID not available yet');
+        return;
+      }
+
+      // Save to Firestore
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'oneSignalId': oneSignalId,
+        'userRole': 'technician',
+        'lastTokenUpdate': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      print('✅ Technician OneSignal ID saved: $oneSignalId');
+
+    } catch (e) {
+      print('❌ Error saving technician OneSignal ID: $e');
+    }
+  }
+
   // Show leave confirmation dialog
   Future<void> _showLeaveConfirmation() async {
     final shouldLeave = await showDialog<bool>(
@@ -142,7 +185,7 @@ class _TechnicianServiceDetailsScreenState extends State<TechnicianServiceDetail
       return;
     }
 
-    if (newPincode.length <4) {
+    if (newPincode.length < 4) {
       _showError('Please enter a valid 4-digit pincode');
       return;
     }
@@ -342,6 +385,9 @@ class _TechnicianServiceDetailsScreenState extends State<TechnicianServiceDetail
       Navigator.pop(context);
 
       if (result['success']) {
+        // ✅ Save OneSignal ID for technician after successful registration
+        await _saveTechnicianOneSignalId();
+
         // Show success dialog with service areas
         showDialog(
           context: context,

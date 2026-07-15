@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:thumstechs/presentation/DashBoard/CustomerDashboard.dart';
 
+import 'ServiceBookingScreen.dart';
+
 const primaryCyan = Color(0xFF42D7D7);
 const darkBlue = Color(0xFF0C1B4D);
 const lightBlue = Color(0xFF7EC8FF);
@@ -16,10 +18,10 @@ class BookingSuccessScreen extends StatelessWidget {
   });
 
   void _navigateToDashboard(BuildContext context) {
-    Navigator.pushAndRemoveUntil(
+    Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => const CustomerDashboard()),
-          (route) => false,
+      MaterialPageRoute(builder: (context) => const ServiceBookingScreen()),
+
     );
   }
 

@@ -11,7 +11,6 @@ const background = Color(0xFFFFFFFF);
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
-
   @override
   State<MyBookingsScreen> createState() => _MyBookingsScreenState();
 }

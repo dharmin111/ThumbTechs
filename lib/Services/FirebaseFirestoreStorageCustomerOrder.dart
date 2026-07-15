@@ -1,4 +1,5 @@
 // Services/FirebaseFirestoreStorageCustomerOrder.dart
+
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -36,9 +37,9 @@ class FirebaseFirestoreStorageCustomerOrder {
         final String downloadUrl = await storageRef.getDownloadURL();
         imageUrls.add(downloadUrl);
 
-        print('Image $i uploaded successfully');
+        print('✅ Image $i uploaded successfully');
       } catch (e) {
-        print('Error uploading image $i: $e');
+        print('❌ Error uploading image $i: $e');
         rethrow;
       }
     }
@@ -74,25 +75,24 @@ class FirebaseFirestoreStorageCustomerOrder {
       final docRef = await _firestore.collection('service_requests').add(updatedRequest.toFirestore());
       final requestId = docRef.id;
 
+      print('📝 Service request saved. ID: $requestId');
+
       // Send notifications to matching technicians
       await _sendNotificationsToMatchingTechnicians(requestId, updatedRequest);
 
       // Send confirmation to customer
       await _sendCustomerConfirmation(user.uid, requestId, updatedRequest);
 
-      print('Service request saved successfully. ID: $requestId');
+      print('✅ Service request saved successfully. ID: $requestId');
       return requestId;
 
     } catch (e) {
-      print('Error saving service request: $e');
+      print('❌ Error saving service request: $e');
       rethrow;
     }
   }
 
-  /// Send notifications to matching technicians
-// In FirebaseFirestoreStorageCustomerOrder.dart
-
-// Replace the notification methods with OneSignal version
+  // ==================== NOTIFICATION METHODS ====================
 
   /// Send notifications to matching technicians using OneSignal
   Future<void> _sendNotificationsToMatchingTechnicians(
@@ -100,25 +100,98 @@ class FirebaseFirestoreStorageCustomerOrder {
       ServiceRequestModel request,
       ) async {
     try {
+      print('📤 Sending notifications to matching technicians...');
+
       await OneSignalNotificationService.notifyMatchingTechnicians(
         serviceType: request.serviceType,
         pincode: request.pincode,
-        title: '🔧 New Service Request!',
-        body: '${request.serviceName} request in ${request.location} (₹${request.budget})',
-        data: {
-          'serviceName': request.serviceName,
-          'location': request.location,
-          'budget': request.budget,
-          'customerName': request.userName,
-          'customerPhone': request.userPhone,
-        },
         requestId: requestId,
+        serviceName: request.serviceName,
+        customerName: request.userName,
       );
+
+      print('✅ Notifications sent to matching technicians');
     } catch (e) {
       print('❌ Error sending notifications: $e');
     }
   }
 
+  /// Send confirmation to customer
+  Future<void> _sendCustomerConfirmation(
+      String userId,
+      String requestId,
+      ServiceRequestModel request,
+      ) async {
+    try {
+      await OneSignalNotificationService.sendRequestPostedNotification(
+        customerId: userId,
+        serviceName: request.serviceName,
+        requestId: requestId,
+      );
+
+      print('✅ Customer confirmation sent');
+    } catch (e) {
+      print('❌ Error sending customer confirmation: $e');
+    }
+  }
+// Services/FirebaseFirestoreStorageCustomerOrder.dart
+
+  /// Re-post a rejected service request
+  Future<String> rePostRequest({
+    required String requestId,
+  }) async {
+    try {
+      final user = currentUser;
+      if (user == null) {
+        throw Exception('User not logged in');
+      }
+
+      final docRef = _firestore.collection('service_requests').doc(requestId);
+      final doc = await docRef.get();
+
+      if (!doc.exists) {
+        throw Exception('Request not found');
+      }
+
+      final data = doc.data()!;
+
+      // 🔥 Update request status back to pending
+      await docRef.update({
+        'status': 'pending',
+        'technicianId': null,
+        'technicianName': null,
+        'technicianPhone': null,
+        'rejectedAt': null,
+        'repostedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'repostCount': FieldValue.increment(1),
+      });
+
+      // 🔥 Send notification to matching technicians again
+      final request = ServiceRequestModel.fromFirestore(doc, null);
+      await _sendNotificationsToMatchingTechnicians(requestId, request);
+
+      // 🔥 Send confirmation to customer
+      await _sendCustomerConfirmation(user.uid, requestId, request);
+
+      print('✅ Request re-posted successfully: $requestId');
+      return requestId;
+    } catch (e) {
+      print('❌ Error re-posting request: $e');
+      rethrow;
+    }
+  }
+
+  /// Permanently delete a request
+  Future<void> permanentlyDeleteRequest(String requestId) async {
+    try {
+      await _firestore.collection('service_requests').doc(requestId).delete();
+      print('✅ Request permanently deleted: $requestId');
+    } catch (e) {
+      print('❌ Error deleting request: $e');
+      rethrow;
+    }
+  }
 
   /// Send notification when no technicians available
   Future<void> _sendNoTechniciansNotification(
@@ -138,30 +211,7 @@ class FirebaseFirestoreStorageCustomerOrder {
         'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      print('Error sending no technicians notification: $e');
-    }
-  }
-
-  /// Send confirmation to customer
-  Future<void> _sendCustomerConfirmation(
-      String userId,
-      String requestId,
-      ServiceRequestModel request,
-      ) async {
-    try {
-      await _firestore.collection('notifications').add({
-        'userId': userId,
-        'userRole': 'customer',
-        'title': '✅ Request Posted Successfully!',
-        'body': 'Your service request has been posted. Technicians in your area have been notified.',
-        'type': 'request_posted',
-        'requestId': requestId,
-        'serviceName': request.serviceName,
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      print('Error sending customer confirmation: $e');
+      print('❌ Error sending no technicians notification: $e');
     }
   }
 
@@ -204,7 +254,7 @@ class FirebaseFirestoreStorageCustomerOrder {
         await pendingDoc.reference.delete();
       }
 
-      // Send notification to customer
+      // 🔥 Send notification to customer using OneSignal
       await OneSignalNotificationService.sendNotificationToUser(
         userId: requestData['userId'],
         title: '🎉 Service Request Accepted!',
@@ -219,7 +269,7 @@ class FirebaseFirestoreStorageCustomerOrder {
         },
       );
 
-      // Send confirmation to technician
+      // 🔥 Send confirmation to technician using OneSignal
       await OneSignalNotificationService.sendNotificationToUser(
         userId: technicianId,
         title: '✅ Request Accepted!',
@@ -232,10 +282,10 @@ class FirebaseFirestoreStorageCustomerOrder {
         },
       );
 
-      print('Technician $technicianName accepted request $requestId');
+      print('✅ Technician $technicianName accepted request $requestId');
 
     } catch (e) {
-      print('Error accepting request: $e');
+      print('❌ Error accepting request: $e');
       rethrow;
     }
   }
@@ -261,10 +311,10 @@ class FirebaseFirestoreStorageCustomerOrder {
       }
 
       await _firestore.collection('service_requests').doc(requestId).update(updates);
-      print('Service request $requestId status updated to $status');
+      print('✅ Service request $requestId status updated to $status');
 
     } catch (e) {
-      print('Error updating status: $e');
+      print('❌ Error updating status: $e');
       rethrow;
     }
   }
@@ -297,7 +347,7 @@ class FirebaseFirestoreStorageCustomerOrder {
       }
       return null;
     } catch (e) {
-      print('Error getting service request: $e');
+      print('❌ Error getting service request: $e');
       return null;
     }
   }
@@ -324,7 +374,7 @@ class FirebaseFirestoreStorageCustomerOrder {
       final doc = await _firestore.collection('users').doc(user.uid).get();
       return doc.data();
     } catch (e) {
-      print('Error getting user data: $e');
+      print('❌ Error getting user data: $e');
       return null;
     }
   }

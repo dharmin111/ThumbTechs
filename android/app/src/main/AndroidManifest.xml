@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- ================= Permissions ================= -->
@@ -9,11 +10,6 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- Storage -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -26,19 +22,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Location -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <!-- Phone -->
-    <uses-permission android:name="android.permission.CALL_PHONE" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-
-    <!-- ================= Application ================= -->
-
     <application
         android:name="${applicationName}"
-        android:label="ThumbTech"
+        android:label="Thumb Tech"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true">
@@ -63,11 +49,38 @@
             <!-- Launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
         </activity>
+
+        <!-- ================= OneSignal Configuration ================= -->
+
+        <!-- OneSignal App ID -->
+        <meta-data
+            android:name="onesignal_app_id"
+            android:value="36709973-f516-4746-a694-c58ad52a532d" />
+
+        <!-- Notification Channel -->
+        <meta-data
+            android:name="com.onesignal.NotificationChannel"
+            android:value="cbfb12cf-b86d-4007-95e6-8e6afc888a5b" />
+        <meta-data
+            android:name="com.onesignal.NotificationChannelName"
+            android:value="ThumbTech Notifications" />
+        <meta-data
+            android:name="com.onesignal.NotificationChannelDescription"
+            android:value="Service requests and messages" />
+
+        <!-- Notification Icon (using launcher icon instead of custom drawable) -->
+        <meta-data
+            android:name="com.onesignal.NotificationIcon"
+            android:resource="@mipmap/ic_launcher" />
+
+        <!-- Notification Accent Color -->
+        <meta-data
+            android:name="com.onesignal.NotificationAccentColor"
+            android:value="FF2563EB" />
 
         <!-- ================= Flutter Local Notifications ================= -->
 

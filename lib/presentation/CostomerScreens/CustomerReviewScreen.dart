@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../Services/FirebaseFirestoreStorageCustomerOrder.dart';
+import '../../Services/TechnicianAvailabilityService.dart';
 import '../../model/ServiceRequestModel.dart';
 import 'BookingSuccessScreen.dart';
+import 'NoTechnicianFoundScreen.dart';
 
 const primaryCyan = Color(0xFF42D7D7);
 const darkBlue = Color(0xFF0C1B4D);
@@ -43,13 +45,332 @@ class _ReviewScreenState extends State<ReviewScreen> {
   bool _isProcessing = false;
   String additionalNote = '';
 
-  Future<void> _saveServiceRequest() async {
-    setState(() {
-      _isProcessing = true;
-    });
+  // Dialog State
+  bool _termsAccepted = false;
+  bool _showTermsError = false;
+
+  // ================= 🔥 MAIN METHOD: Check Availability First =================
+  Future<void> _checkAvailabilityAndConfirm() async {
+    if (_isProcessing) return;
+
+    setState(() => _isProcessing = true);
+
+    // 🔥 Show Loading Dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(primaryCyan),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Checking for available technicians...',
+              style: TextStyle(
+                fontSize: 14,
+                color: darkBlue,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pincode: ${widget.pincode}',
+              style: TextStyle(
+                fontSize: 12,
+                color: darkBlue.withOpacity(0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
 
     try {
-      // Check if user is logged in
+      // 🔥 STEP 1: Check if technicians available
+      final result = await TechnicianAvailabilityService.checkAvailability(
+        pincode: widget.pincode,
+        serviceType: widget.serviceType,
+      );
+
+      // 🔥 Close Loading Dialog
+      if (context.mounted) Navigator.pop(context);
+
+      print('📊 Availability Result: ${result.isAvailable}');
+      print('📊 Matched Technicians: ${result.count}');
+
+      if (result.isAvailable) {
+        // ✅ Technicians Available → Show Terms Dialog
+        if (context.mounted) {
+          _showConfirmBookingDialog();
+        }
+      } else {
+        // ❌ No Technicians Available → Show Image Screen
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NoTechnicianFoundScreen(
+                pincode: widget.pincode,
+                serviceName: widget.serviceName,
+                onRetry: () {
+                  Navigator.pop(context);
+                  // Retry checking
+                  _checkAvailabilityAndConfirm();
+                },
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // 🔥 Close Loading Dialog
+      if (context.mounted) Navigator.pop(context);
+
+      print('❌ Error checking availability: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking availability: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  // ================= SHOW TERMS & CONDITIONS DIALOG =================
+  void _showConfirmBookingDialog() {
+    setState(() {
+      _termsAccepted = false;
+      _showTermsError = false;
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: const Text(
+                'Terms & Conditions',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: darkBlue,
+                ),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 16),
+
+                    // 🔥 Available Technicians Count
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '✅ Technicians available in your area!',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Terms & Conditions Checkbox
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Checkbox(
+                            value: _termsAccepted,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                _termsAccepted = value ?? false;
+                                _showTermsError = false;
+                              });
+                            },
+                            activeColor: primaryCyan,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              // TODO: Navigate to Terms & Conditions Screen
+                            },
+                            child: RichText(
+                              text: TextSpan(
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: darkBlue,
+                                ),
+                                children: [
+                                  const TextSpan(text: 'I agree to the '),
+                                  TextSpan(
+                                    text: 'Terms & Conditions',
+                                    style: const TextStyle(
+                                      color: Colors.blue,
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Terms Error
+                    if (_showTermsError)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              size: 16,
+                              color: Colors.red.shade700,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Please accept Terms & Conditions',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.red.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // Disclaimer Box
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.amber.shade700,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Please Discuss The Issue, Pricing and Timing With The Technician Before Sharing Your Address.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.amber.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: darkBlue,
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    // Check if terms accepted
+                    if (!_termsAccepted) {
+                      setDialogState(() {
+                        _showTermsError = true;
+                      });
+                      return;
+                    }
+
+                    // Close dialog and save
+                    Navigator.pop(context);
+                    _saveServiceRequest();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryCyan,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  child: const Text(
+                    'Confirm Booking',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ================= SAVE SERVICE REQUEST =================
+  Future<void> _saveServiceRequest() async {
+    setState(() => _isProcessing = true);
+
+    try {
       if (!_firebaseService.isUserLoggedIn()) {
         throw Exception('Please login to continue');
       }
@@ -57,7 +378,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
       final userId = _firebaseService.getCurrentUserId()!;
       final userEmail = _firebaseService.getCurrentUserEmail()!;
 
-      // Get user data for name and phone
       final userData = await _firebaseService.getCurrentUserData();
       final userName = userData?['name'] ?? 'Customer';
       final userPhone = userData?['phone'] ?? '';
@@ -87,7 +407,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ),
       );
 
-      // Upload images to Firebase Storage
       List<String> imageUrls = [];
       if (widget.images.isNotEmpty) {
         imageUrls = await _firebaseService.uploadServiceImages(
@@ -96,7 +415,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
         );
       }
 
-      // Create ServiceRequestModel instance
       final serviceRequest = ServiceRequestModel(
         userId: userId,
         userEmail: userEmail,
@@ -115,19 +433,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
         updatedAt: Timestamp.now(),
       );
 
-      // Save to Firestore with automatic technician matching
       final requestId = await _firebaseService.saveServiceRequestWithMatching(
         request: serviceRequest,
       );
 
       print('Service request saved with ID: $requestId');
 
-      // Close the progress dialog
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
       }
 
-      // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Service booked successfully! Technicians will be notified.'),
@@ -136,7 +451,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ),
       );
 
-      // Navigate to BookingSuccessScreen directly without using named route
       Future.delayed(const Duration(seconds: 2), () {
         Navigator.pushReplacement(
           context,
@@ -145,9 +459,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
         );
       });
-
     } catch (e) {
-      // Close progress dialog if open
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
       }
@@ -161,13 +473,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _isProcessing = false;
-        });
+        setState(() => _isProcessing = false);
       }
     }
   }
 
+  // ================= BUILD =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -232,7 +543,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
                             'assets/revicon/serviceicon.png',
                             height: 20,
                             width: 20,
-                            // Color tint removed for testing
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(Icons.build, color: Colors.white, size: 20);
+                            },
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -267,31 +580,23 @@ class _ReviewScreenState extends State<ReviewScreen> {
                               : widget.issueDescription,
                         ),
                         const SizedBox(height: 16),
-
-                        // Location
                         _buildSummaryRow(
                           imagePath: 'assets/revicon/location.png',
                           label: 'Location',
                           value: widget.address,
                         ),
                         const SizedBox(height: 16),
-
-                        // Pincode
                         _buildSummaryRow(
                           imagePath: 'assets/revicon/pincode.png',
                           label: 'Pincode',
                           value: widget.pincode,
                         ),
                         const SizedBox(height: 16),
-
-                        // Budget
                         _buildSummaryRow(
                           imagePath: 'assets/revicon/budget.png',
                           label: 'Your Budget',
                           value: '₹${widget.budget}',
                         ),
-
-                        // Additional Note - Editable
                         const SizedBox(height: 16),
                         GestureDetector(
                           onTap: () {
@@ -413,13 +718,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
             const SizedBox(height: 30),
 
-            // Confirm Booking Button
+            // 🔥 CONFIRM BOOKING BUTTON - Calls check first
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
               child: Column(
                 children: [
                   ElevatedButton(
-                    onPressed: _isProcessing ? null : _saveServiceRequest,
+                    onPressed: _isProcessing ? null : _checkAvailabilityAndConfirm,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryCyan,
                       foregroundColor: Colors.white,
@@ -463,6 +768,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
+  // ================= HELPER WIDGETS =================
+
   Widget _buildSummaryRow({
     required String imagePath,
     required String label,
@@ -479,11 +786,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             imagePath,
             width: 20,
             height: 20,
-            // Color tint removed for testing
             errorBuilder: (context, error, stackTrace) {
-              // Fallback to show if image is missing
-              print('Error loading image: $imagePath');
-              print('Error: $error');
               return Container(
                 width: 20,
                 height: 20,
@@ -526,18 +829,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
           ),
         ),
         if (showEditIcon)
-          Image.asset(
-            'assets/revicon/addnote.png',
-            width: 18,
-            height: 18,
-            // Color tint removed for testing
-            errorBuilder: (context, error, stackTrace) {
-              return const Icon(
-                Icons.edit,
-                size: 18,
-                color: primaryCyan,
-              );
-            },
+          const Icon(
+            Icons.edit,
+            size: 18,
+            color: primaryCyan,
           ),
       ],
     );

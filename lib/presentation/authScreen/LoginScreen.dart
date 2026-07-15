@@ -5,6 +5,9 @@ import 'package:thumstechs/TechnicianCustomertermAndCondition/TermsAndConditions
 import 'package:thumstechs/presentation/DashBoard/CustomerDashboard.dart';
 import 'package:thumstechs/presentation/DashBoard/TechnicianDashboard.dart';
 import 'package:thumstechs/presentation/authScreen/signupScreen.dart';
+import '../../Admin/AdminScreens/AdminLoginScreen.dart';
+import '../../Admin/AdminScreens/AdminPendingScreen.dart';
+import '../../Admin/AdminScreens/AdminDashboard.dart';
 import '../../Services/authServices.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import '../../Services/oneSignalNotificationService .dart';
@@ -25,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool isLoading = false;
   bool _isTermsAccepted = false;
+  bool _obscurePassword = false;
 
   @override
   void dispose() {
@@ -66,6 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (!doc.exists || doc.data() == null) {
+        await FirebaseAuth.instance.signOut();
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -76,7 +81,27 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       final data = doc.data()!;
-      final role = data['role'];
+
+      // ✅ CHECK: Is user active?
+      final isActive = data['isActive'] ?? true;
+
+      if (!isActive) {
+        // ✅ User is deactivated - Sign out and show message
+        await FirebaseAuth.instance.signOut();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your account has been deactivated. Please contact admin'
+                 ' +917087234563 '),
+
+
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
+      final role = data['role'] ?? 'customer';
 
       await _saveOneSignalId(user.uid, role);
 
@@ -84,6 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SnackBar(content: Text("Login Successful")),
       );
 
+      // ✅ Navigate based on role
       if (role == "customer") {
         Navigator.pushReplacement(
           context,
@@ -91,16 +117,31 @@ class _LoginScreenState extends State<LoginScreen> {
             builder: (_) => const CustomerDashboard(),
           ),
         );
-      }
-      else if (role == "technician") {
+      } else if (role == "technician") {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => TechnicianDashboard(),
+            builder: (_) => const TechnicianDashboard(),
           ),
         );
-      }
-      else {
+      } else if (role == "admin") {
+        final isApproved = data['isApproved'] ?? false;
+        if (isApproved) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const AdminDashboard(),
+            ),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const AdminPendingScreen(),
+            ),
+          );
+        }
+      } else {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -216,12 +257,23 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 25),
               child: TextField(
                 controller: passwordController,
-                obscureText: true,
+                obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   hintText: "Password",
                   prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.black,
+                    ),
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(18),
                     borderSide: BorderSide.none,
@@ -230,11 +282,11 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 4),
 
             /// FORGOT PASSWORD
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 25),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
@@ -251,9 +303,9 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 4),
 
-            /// LOGIN BUTTON - Gradient Button
+            /// LOGIN BUTTON
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 25),
               child: SizedBox(
@@ -274,7 +326,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(18),
                       gradient: const LinearGradient(
                         colors: [
-                          Color(0xff009999), // lighter
+                          Color(0xff009999),
                           Color(0xff008976),
                         ],
                       ),
@@ -284,7 +336,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? const CircularProgressIndicator(color: Colors.white)
                           : const Text(
                         "Login",
-                        style: TextStyle(fontSize: 22, color: Colors.white, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 22,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -292,7 +348,25 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            /// ADMIN LOGIN BUTTON
+            TextButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AdminLoginScreen(),
+                  ),
+                );
+              },
+              child: const Text(
+                'Admin Login',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
 
             /// Terms & Conditions Checkbox
             Padding(
@@ -348,7 +422,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
 
             /// SIGNUP LINK
             Row(

@@ -11,6 +11,7 @@ class ServiceRequestModel {
   String serviceName;
   String serviceType;
   String issue;
+  final String? videoId; // YouTube video ID
   String location;
   String pincode;
   double budget;
@@ -32,6 +33,7 @@ class ServiceRequestModel {
   ServiceRequestModel({
     this.id,
     required this.userId,
+    this.videoId,
     required this.userEmail,
     required this.userName,
     required this.userPhone,
@@ -70,6 +72,7 @@ class ServiceRequestModel {
       userName: data['userName'] ?? '',
       userPhone: data['userPhone'] ?? '',
       serviceName: data['serviceName'] ?? '',
+      videoId: data['videoId'],
       serviceType: data['serviceType'] ?? '',
       issue: data['issue'] ?? '',
       location: data['location'] ?? '',
@@ -106,6 +109,7 @@ class ServiceRequestModel {
       'serviceName': serviceName,
       'serviceType': serviceType,
       'issue': issue,
+      'videoId': videoId,
       'location': location,
       'pincode': pincode,
       'budget': budget,
@@ -130,6 +134,7 @@ class ServiceRequestModel {
   ServiceRequestModel copyWith({
     String? id,
     String? userId,
+    String? videoId,
     String? userEmail,
     String? userName,
     String? userPhone,
@@ -163,6 +168,7 @@ class ServiceRequestModel {
       serviceName: serviceName ?? this.serviceName,
       serviceType: serviceType ?? this.serviceType,
       issue: issue ?? this.issue,
+      videoId: videoId ?? this.videoId,
       location: location ?? this.location,
       pincode: pincode ?? this.pincode,
       budget: budget ?? this.budget,

@@ -1,15 +1,17 @@
+// Services/oneSignalNotificationService.dart
+//<!--            android:value="thumstech_channel" />-->
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:http/http.dart' as http;
+import '../main.dart';
 
 class OneSignalNotificationService {
   static bool _isInitialized = false;
   static const String _oneSignalAppId = '36709973-f516-4746-a694-c58ad52a532d';
-  // static const String _oneSignalAppId = '3966b6b9-330c-492c-aa2b-a88e88b07a6d';
-
-  static const String _oneSignalApiKey ='os_v2_app_hftlnojtbreszkrlvchirmd2nvblg5qnfz6uqpe6pikonxnqvz2vezj3vdaiqew4fq3se6f4mxmqqeku2tcoxe63rotdaiylbzdvquy';
+  static const String _oneSignalApiKey =
+ 'os_v2_app_gzyjs47vczdunjuuywfnkkstfuo6ggnya4muo2mrl5tpkfh5w2a7xuhxp37sizrpeguohrwspmvujanma3iposcwut6kt5dozwrp2ti';
 
   // ================= INIT =================
   static Future<void> initialize() async {
@@ -17,26 +19,95 @@ class OneSignalNotificationService {
 
     try {
       OneSignal.initialize(_oneSignalAppId);
-
       await OneSignal.Notifications.requestPermission(true);
-
       _isInitialized = true;
       print('✅ OneSignal initialized');
 
-      // CLICK LISTENER
+      // CLICK LISTENER WITH NAVIGATION
       OneSignal.Notifications.addClickListener((event) {
         final data = event.notification.additionalData ?? {};
         print('📱 Notification Clicked: $data');
+        _handleNotificationTap(Map<String, dynamic>.from(data));
       });
 
-      // FOREGROUND LISTENER (FIXED)
+      // FOREGROUND LISTENER
       OneSignal.Notifications.addForegroundWillDisplayListener((event) {
         print('📨 Foreground Notification: ${event.notification.additionalData}');
-
-        event.notification.display(); // MUST call this in v5
+        event.notification.display();
       });
     } catch (e) {
       print('❌ OneSignal init error: $e');
+    }
+  }
+
+  // ================= NAVIGATION HANDLER =================
+  static void _handleNotificationTap(Map<String, dynamic> data) {
+    String type = data['type'] ?? '';
+    print('🔍 Notification type: $type');
+    print('📦 Data: $data');
+
+    if (type == 'new_message') {
+      final conversationId = data['conversationId'] ?? '';
+      final requestId = data['requestId'] ?? '';
+      String otherUserId = data['senderId'] ?? '';
+      final otherUserName = data['senderName'] ?? 'User';
+      final otherUserRole = data['senderRole'] ?? 'customer';
+
+      if (otherUserId.isEmpty && conversationId.isNotEmpty) {
+        final parts = conversationId.split('_');
+        if (parts.length >= 3) {
+          final currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser != null) {
+            if (parts[1] == currentUser.uid) {
+              otherUserId = parts[2];
+            } else {
+              otherUserId = parts[1];
+            }
+          }
+        }
+      }
+
+      if (otherUserId.isEmpty) {
+        print('❌ ERROR: Cannot navigate - otherUserId is empty');
+        return;
+      }
+
+      navigatorKey.currentState?.pushNamed(
+        '/chat',
+        arguments: {
+          'conversationId': conversationId,
+          'requestId': requestId,
+          'otherUserId': otherUserId,
+          'otherUserName': otherUserName,
+          'otherUserRole': otherUserRole,
+        },
+      );
+    } else if (type == 'new_request' || type == 'request_accepted' || type == 'task') {
+      navigatorKey.currentState?.pushNamed('/technician-dashboard');
+    } else if (type == 'service_request') {
+      final serviceName = data['serviceName'] ?? 'Service Request';
+      navigatorKey.currentState?.pushNamed(
+        '/service-details',
+        arguments: {'serviceName': serviceName},
+      );
+    } else if (type == 'request_posted') {
+      navigatorKey.currentState?.pushNamed('/customer-dashboard');
+    } else if (type == 'request_rejected') {
+      navigatorKey.currentState?.pushNamed('/customer-dashboard');
+    } else {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        FirebaseFirestore.instance.collection('users').doc(user.uid).get().then((doc) {
+          if (doc.exists) {
+            final role = doc.data()?['role'] ?? 'customer';
+            if (role == 'technician') {
+              navigatorKey.currentState?.pushNamed('/technician-dashboard');
+            } else {
+              navigatorKey.currentState?.pushNamed('/customer-dashboard');
+            }
+          }
+        });
+      }
     }
   }
 
@@ -50,9 +121,7 @@ class OneSignalNotificationService {
     }
   }
 
-// Services/OneSignalNotificationService.dart
-
-// Replace the saveOneSignalId method with this:
+  // ================= SAVE ONE SIGNAL ID =================
   static Future<bool> saveOneSignalId({
     required String userId,
     required String userRole,
@@ -60,7 +129,6 @@ class OneSignalNotificationService {
     try {
       print('📱 Saving OneSignal ID for user: $userId (Role: $userRole)');
 
-      // Wait for OneSignal ID to be available (up to 5 seconds)
       String? oneSignalId;
       for (int i = 0; i < 10; i++) {
         oneSignalId = OneSignal.User.pushSubscription.id;
@@ -75,10 +143,10 @@ class OneSignalNotificationService {
         return false;
       }
 
-      // Save to Firestore
       await FirebaseFirestore.instance.collection('users').doc(userId).set({
         'oneSignalId': oneSignalId,
         'userRole': userRole,
+        'notificationsEnabled': true,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -89,9 +157,8 @@ class OneSignalNotificationService {
       return false;
     }
   }
-// Services/OneSignalNotificationService.dart
 
-// Add this method inside the OneSignalNotificationService class
+  // ================= SAVE CURRENT USER ID =================
   static Future<void> saveCurrentUserOneSignalId() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -99,7 +166,6 @@ class OneSignalNotificationService {
       return;
     }
 
-    // Get OneSignal ID from device (wait up to 5 seconds)
     String? oneSignalId;
     for (int i = 0; i < 10; i++) {
       oneSignalId = OneSignal.User.pushSubscription.id;
@@ -114,15 +180,16 @@ class OneSignalNotificationService {
       return;
     }
 
-    // Update Firestore for the current user
     await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
       'oneSignalId': oneSignalId,
+      'notificationsEnabled': true,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     print('✅ OneSignal ID saved for user: ${user.uid}');
     print('📱 OneSignal ID: $oneSignalId');
   }
+
   // ================= SEND NOTIFICATION =================
   static Future<bool> sendNotificationToUser({
     required String userId,
@@ -144,9 +211,26 @@ class OneSignalNotificationService {
       final oneSignalId = doc.data()?['oneSignalId'];
 
       if (oneSignalId == null || oneSignalId.toString().isEmpty) {
-        print('❌ No OneSignal ID');
+        print('❌ No OneSignal ID found for user: $userId');
         return false;
       }
+
+      print('📤 Sending notification to: $oneSignalId');
+      print('📝 Title: $title');
+      print('📝 Body: $body');
+      print('📦 Data: $data');
+
+      final payload = {
+        'app_id': _oneSignalAppId,
+        'include_player_ids': [oneSignalId],
+        'headings': {'en': title},
+        'contents': {'en': body},
+        'data': data,
+        'priority': 10,
+        'android_channel_id': 'cbfb12cf-b86d-4007-95e6-8e6afc888a5b',
+        'android_sound': 'notification_sound',
+
+      };
 
       final response = await http.post(
         Uri.parse('https://onesignal.com/api/v1/notifications'),
@@ -154,17 +238,12 @@ class OneSignalNotificationService {
           'Content-Type': 'application/json',
           'Authorization': 'Basic $_oneSignalApiKey',
         },
-        body: jsonEncode({
-          'app_id': _oneSignalAppId,
-          'include_player_ids': [oneSignalId],
-          'headings': {'en': title},
-          'contents': {'en': body},
-          'data': data,
-        }),
+        body: jsonEncode(payload),
       );
 
       if (response.statusCode == 200) {
-        print('✅ Notification sent');
+        final responseData = jsonDecode(response.body);
+        print('✅ Notification sent successfully. ID: ${responseData['id']}');
 
         await FirebaseFirestore.instance.collection('notifications').add({
           'userId': userId,
@@ -178,12 +257,230 @@ class OneSignalNotificationService {
 
         return true;
       } else {
-        print('❌ Failed: ${response.body}');
+        print('❌ Failed to send: ${response.statusCode} - ${response.body}');
         return false;
       }
     } catch (e) {
       print('❌ Send error: $e');
       return false;
+    }
+  }
+
+  // ================= SEND MESSAGE NOTIFICATION =================
+  static Future<bool> sendMessageNotification({
+    required String receiverId,
+    required String senderName,
+    required String message,
+    required String conversationId,
+    required String requestId,
+    required String senderId,
+    required String senderRole,
+  }) async {
+    return sendNotificationToUser(
+      userId: receiverId,
+      title: '💬 New Message from $senderName',
+      body: message.length > 100 ? '${message.substring(0, 100)}...' : message,
+      data: {
+        'type': 'new_message',
+        'conversationId': conversationId,
+        'requestId': requestId,
+        'senderName': senderName,
+        'senderId': senderId,
+        'senderRole': senderRole,
+      },
+    );
+  }
+
+  // ================= SEND TASK NOTIFICATION =================
+  static Future<bool> sendTaskNotification({
+    required String technicianId,
+    required String title,
+    required String body,
+    required String requestId,
+    required String serviceName,
+  }) async {
+    return sendNotificationToUser(
+      userId: technicianId,
+      title: title,
+      body: body,
+      data: {
+        'type': 'task',
+        'requestId': requestId,
+        'serviceName': serviceName,
+      },
+    );
+  }
+
+  // ================= SEND NEW REQUEST NOTIFICATION =================
+  static Future<bool> sendNewRequestNotification({
+    required String technicianId,
+    required String serviceName,
+    required String customerName,
+    required String requestId,
+  }) async {
+    return sendNotificationToUser(
+      userId: technicianId,
+      title: '🔧 New Service Request',
+      body: '$customerName needs $serviceName',
+      data: {
+        'type': 'new_request',
+        'requestId': requestId,
+        'serviceName': serviceName,
+        'customerName': customerName,
+      },
+    );
+  }
+
+  // ================= SEND REQUEST POSTED NOTIFICATION =================
+  static Future<bool> sendRequestPostedNotification({
+    required String customerId,
+    required String serviceName,
+    required String requestId,
+  }) async {
+    return sendNotificationToUser(
+      userId: customerId,
+      title: '✅ Request Posted Successfully!',
+      body: 'Your service request for $serviceName has been posted. Technicians will respond shortly.',
+      data: {
+        'type': 'request_posted',
+        'requestId': requestId,
+        'serviceName': serviceName,
+      },
+    );
+  }
+
+  // ================= SEND REQUEST ACCEPTED NOTIFICATION =================
+  static Future<bool> sendRequestAcceptedNotification({
+    required String customerId,
+    required String technicianName,
+    required String technicianPhone,
+    required String requestId,
+    required String serviceName,
+  }) async {
+    return sendNotificationToUser(
+      userId: customerId,
+      title: '✅ Request Accepted!',
+      body: '$technicianName has accepted your service request for $serviceName.',
+      data: {
+        'type': 'request_accepted',
+        'requestId': requestId,
+        'serviceName': serviceName,
+        'technicianName': technicianName,
+        'technicianPhone': technicianPhone,
+      },
+    );
+  }
+
+  // ================= SEND REQUEST REJECTED NOTIFICATION =================
+  static Future<bool> sendRequestRejectedNotification({
+    required String customerId,
+    required String requestId,
+    required String serviceName,
+  }) async {
+    return sendNotificationToUser(
+      userId: customerId,
+      title: '❌ Request Rejected',
+      body: 'Your service request for $serviceName has been rejected. You can post a new request.',
+      data: {
+        'type': 'request_rejected',
+        'requestId': requestId,
+        'serviceName': serviceName,
+      },
+    );
+  }
+
+  // ================= MATCH TECHNICIANS =================
+  static Future<void> notifyMatchingTechnicians({
+    required String serviceType,
+    required String pincode,
+    required String requestId,
+    required String serviceName,
+    required String customerName,
+  }) async {
+    try {
+      print('🔍 Looking for technicians:');
+      print('   Service: $serviceType');
+      print('   Customer Pincode: $pincode');
+
+      final techs = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'technician')
+          .get();
+
+      print('📊 Total technicians: ${techs.docs.length}');
+
+      int matchedCount = 0;
+      int sentCount = 0;
+
+      for (final doc in techs.docs) {
+        final d = doc.data();
+
+        final categories = List<String>.from(d['categories'] ?? []);
+        List<String> technicianPincodes = [];
+        if (d['pincodes'] != null && (d['pincodes'] as List).isNotEmpty) {
+          technicianPincodes = List<String>.from(d['pincodes']);
+        } else if (d['pincode'] != null && d['pincode'].toString().isNotEmpty) {
+          technicianPincodes = [d['pincode'].toString()];
+        }
+
+        final categoryMatches = categories.contains(serviceType);
+        final pincodeMatches = technicianPincodes.contains(pincode);
+
+        if (categoryMatches && pincodeMatches) {
+          matchedCount++;
+          final technicianName = d['name'] ?? 'Technician';
+
+          print('✅ MATCH: $technicianName');
+
+          final success = await sendNewRequestNotification(
+            technicianId: doc.id,
+            serviceName: serviceName,
+            customerName: customerName,
+            requestId: requestId,
+          );
+
+          if (success) {
+            sentCount++;
+            await FirebaseFirestore.instance
+                .collection('technician_pending_requests')
+                .doc('${doc.id}_$requestId')
+                .set({
+              'technicianId': doc.id,
+              'technicianName': technicianName,
+              'requestId': requestId,
+              'serviceName': serviceName,
+              'customerName': customerName,
+              'customerPincode': pincode,
+              'createdAt': FieldValue.serverTimestamp(),
+              'status': 'pending',
+            });
+          }
+        }
+      }
+
+      print('📊 Results: Matched=$matchedCount, Notifications Sent=$sentCount');
+    } catch (e) {
+      print('❌ Matching error: $e');
+    }
+  }
+
+  // ================= ENSURE ID EXISTS =================
+  static Future<void> ensureOneSignalIdForCurrentUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    final oneSignalId = doc.data()?['oneSignalId'];
+
+    if (oneSignalId == null || oneSignalId.toString().isEmpty) {
+      print('⚠️ No OneSignal ID found, saving now...');
+      await saveCurrentUserOneSignalId();
+    } else {
+      print('✅ OneSignal ID already exists: $oneSignalId');
     }
   }
 
@@ -206,129 +503,5 @@ class OneSignalNotificationService {
     }
 
     return results;
-  }
-// ================= MATCH TECHNICIANS (WITH MULTIPLE PINCODES) =================
-  static Future<void> notifyMatchingTechnicians({
-    required String serviceType,
-    required String pincode,  // Customer's pincode
-    required String requestId,
-    required String title,
-    required String body,
-    required Map<String, dynamic> data,
-  }) async {
-    try {
-      print('🔍 Looking for technicians:');
-      print('   Service: $serviceType');
-      print('   Customer Pincode: $pincode');
-
-      final techs = await FirebaseFirestore.instance
-          .collection('users')
-          .where('role', isEqualTo: 'technician')
-          .get();
-
-      print('📊 Total technicians: ${techs.docs.length}');
-
-      int matchedCount = 0;
-      int sentCount = 0;
-
-      for (final doc in techs.docs) {
-        final d = doc.data();
-
-        // Get categories
-        final categories = List<String>.from(d['categories'] ?? []);
-
-        // ✅ GET MULTIPLE PINCODES
-        List<String> technicianPincodes = [];
-
-        // Check for pincodes array first
-        if (d['pincodes'] != null && (d['pincodes'] as List).isNotEmpty) {
-          technicianPincodes = List<String>.from(d['pincodes']);
-        }
-        // Fallback to single pincode for backward compatibility
-        else if (d['pincode'] != null && d['pincode'].toString().isNotEmpty) {
-          technicianPincodes = [d['pincode'].toString()];
-        }
-
-        // ✅ Check if category matches AND customer pincode is in technician's pincodes
-        final categoryMatches = categories.contains(serviceType);
-        final pincodeMatches = technicianPincodes.contains(pincode);
-
-        if (categoryMatches && pincodeMatches) {
-          matchedCount++;
-          final technicianName = d['name'] ?? 'Technician';
-
-          print('✅ MATCH: $technicianName');
-          print('   Serves pincodes: ${technicianPincodes.join(", ")}');
-          print('   Categories: ${categories.join(", ")}');
-
-          final success = await sendNotificationToUser(
-            userId: doc.id,
-            title: title,
-            body: body,
-            data: {
-              ...data,
-              'type': 'new_request',
-              'requestId': requestId,
-              'customerPincode': pincode,
-            },
-          );
-
-          if (success) {
-            sentCount++;
-
-            // Save to pending requests
-            await FirebaseFirestore.instance
-                .collection('technician_pending_requests')
-                .doc('${doc.id}_$requestId')
-                .set({
-              'technicianId': doc.id,
-              'technicianName': technicianName,
-              'requestId': requestId,
-              'serviceName': data['serviceName'],
-              'customerName': data['customerName'],
-              'customerPincode': pincode,
-              'createdAt': FieldValue.serverTimestamp(),
-              'status': 'pending',
-            });
-          }
-        }
-      }
-
-      print('📊 Results: Matched=$matchedCount, Notifications Sent=$sentCount');
-
-    } catch (e) {
-      print('❌ Matching error: $e');
-    }
-  }
-
-  // ================= MESSAGE NOTIFICATION =================
-  static Future<bool> sendMessageNotification({
-    required String receiverId,
-    required String senderName,
-    required String message,
-    required String conversationId,
-    required String requestId,
-  }) async {
-    return sendNotificationToUser(
-      userId: receiverId,
-      title: '💬 New Message from $senderName',
-      body: message.length > 100
-          ? '${message.substring(0, 100)}...'
-          : message,
-      data: {
-        'type': 'new_message',
-        'conversationId': conversationId,
-        'requestId': requestId,
-        'senderName': senderName,
-      },
-    );
-  }
-
-  // ================= REMOVE ID =================
-  static Future<void> removeOneSignalId(String userId) async {
-    await FirebaseFirestore.instance.collection('users').doc(userId).update({
-      'oneSignalId': FieldValue.delete(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
   }
 }

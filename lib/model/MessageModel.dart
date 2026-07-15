@@ -76,7 +76,9 @@ class MessageModel {
   }
 }
 
-// Conversation Model
+// ============================================
+// ✅ Conversation Model (Fixed)
+// ============================================
 class ConversationModel {
   final String id;
   final String requestId;
@@ -86,7 +88,8 @@ class ConversationModel {
   final String technicianName;
   final String lastMessage;
   final DateTime lastMessageTime;
-  final int unreadCount;
+  final int customerUnreadCount; // ✅ Separate for customer
+  final int technicianUnreadCount; // ✅ Separate for technician
   final String serviceName;
   final String status; // 'active', 'completed', 'archived'
 
@@ -99,10 +102,26 @@ class ConversationModel {
     required this.technicianName,
     required this.lastMessage,
     required this.lastMessageTime,
-    required this.unreadCount,
+    required this.customerUnreadCount,
+    required this.technicianUnreadCount,
     required this.serviceName,
     required this.status,
   });
+
+  // ✅ Get unread count based on current user
+  int getUnreadCount(String currentUserId) {
+    if (customerId == currentUserId) {
+      return customerUnreadCount;
+    } else if (technicianId == currentUserId) {
+      return technicianUnreadCount;
+    }
+    return 0;
+  }
+
+  // ✅ Get total unread count (for backwards compatibility)
+  int get totalUnreadCount {
+    return customerUnreadCount + technicianUnreadCount;
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -113,7 +132,8 @@ class ConversationModel {
       'technicianName': technicianName,
       'lastMessage': lastMessage,
       'lastMessageTime': FieldValue.serverTimestamp(),
-      'unreadCount': unreadCount,
+      'customerUnreadCount': customerUnreadCount,
+      'technicianUnreadCount': technicianUnreadCount,
       'serviceName': serviceName,
       'status': status,
     };
@@ -124,13 +144,14 @@ class ConversationModel {
       id: id,
       requestId: map['requestId'] ?? '',
       customerId: map['customerId'] ?? '',
-      customerName: map['customerName'] ?? '',
+      customerName: map['customerName'] ?? 'Customer',
       technicianId: map['technicianId'] ?? '',
-      technicianName: map['technicianName'] ?? '',
+      technicianName: map['technicianName'] ?? 'Technician',
       lastMessage: map['lastMessage'] ?? '',
       lastMessageTime: (map['lastMessageTime'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      unreadCount: map['unreadCount'] ?? 0,
-      serviceName: map['serviceName'] ?? '',
+      customerUnreadCount: map['customerUnreadCount'] ?? 0,
+      technicianUnreadCount: map['technicianUnreadCount'] ?? 0,
+      serviceName: map['serviceName'] ?? 'Service',
       status: map['status'] ?? 'active',
     );
   }

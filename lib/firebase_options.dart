@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web; // ✅ Web options return
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -30,17 +27,17 @@ class DefaultFirebaseOptions {
       case TargetPlatform.macOS:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+              'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+              'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
+              'you can reconfigure this by running the FlutterFire CLI again.',
         );
       default:
         throw UnsupportedError(
@@ -64,5 +61,15 @@ class DefaultFirebaseOptions {
     projectId: 'thumbtech-521ae',
     storageBucket: 'thumbtech-521ae.firebasestorage.app',
     iosBundleId: 'com.baghi.thumstechs',
+  );
+  // ✅ Web Firebase Options (Updated with your web config)
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyCny9NE3IbWGyapnM1EBLw7g9nxw-loAJQ',
+    appId: '1:988985361848:web:ec231f5653dbae80c3fb4d',
+    messagingSenderId: '988985361848',
+    projectId: 'thumbtech-521ae',
+    authDomain: 'thumbtech-521ae.firebaseapp.com',
+    storageBucket: 'thumbtech-521ae.firebasestorage.app',
+    measurementId: 'G-G9QL0489RB', // ✅ Optional but good to have
   );
 }

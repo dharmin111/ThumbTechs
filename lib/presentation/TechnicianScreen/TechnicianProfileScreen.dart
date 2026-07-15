@@ -28,7 +28,6 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
   bool isActive = true;
   bool isLoading = true;
   bool isUploading = false;
-  bool notificationsEnabled = false;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -64,7 +63,7 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
   void initState() {
     super.initState();
     _fetchTechnicianProfile();
-    _checkNotificationStatus();
+    _ensureOneSignalId(); // Auto-save OneSignal ID on profile load
   }
 
   @override
@@ -76,59 +75,30 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _checkNotificationStatus() async {
+  // ✅ Auto-save OneSignal ID (notifications always on)
+  Future<void> _ensureOneSignalId() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
+    if (user == null) return;
+
+    try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
+
       final oneSignalId = doc.data()?['oneSignalId'];
-      setState(() {
-        notificationsEnabled = oneSignalId != null && oneSignalId.toString().isNotEmpty;
-      });
-    }
-  }
 
-  Future<void> _toggleNotifications(bool value) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    setState(() {
-      notificationsEnabled = value;
-    });
-
-    if (value) {
-      final saved = await OneSignalNotificationService.saveOneSignalId(
-        userId: user.uid,
-        userRole: 'technician',
-      );
-      if (!saved) {
-        setState(() {
-          notificationsEnabled = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to enable notifications'),
-            backgroundColor: Colors.red,
-          ),
+      if (oneSignalId == null || oneSignalId.toString().isEmpty) {
+        print('📱 Auto-saving OneSignal ID for technician');
+        await OneSignalNotificationService.saveOneSignalId(
+          userId: user.uid,
+          userRole: 'technician',
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notifications enabled!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        print('✅ OneSignal ID already exists: $oneSignalId');
       }
-    } else {
-      await OneSignalNotificationService.removeOneSignalId(user.uid);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notifications disabled'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    } catch (e) {
+      print('Error ensuring OneSignal ID: $e');
     }
   }
 
@@ -515,6 +485,7 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
     );
   }
 
+  // ✅ MODIFIED: Keep OneSignal ID on logout (no deletion)
   void _showLogoutConfirmation() {
     showDialog(
       context: context,
@@ -531,7 +502,7 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              // Close the dialog first
+              // Close the dialog
               if (mounted) {
                 Navigator.pop(dialogContext);
               }
@@ -548,11 +519,9 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
               }
 
               try {
-                // Remove OneSignal ID
-                final user = FirebaseAuth.instance.currentUser;
-                if (user != null) {
-                  await OneSignalNotificationService.removeOneSignalId(user.uid);
-                }
+                // ✅ IMPORTANT: DO NOT remove OneSignal ID
+                // Just sign out - keep the ID in Firestore for future notifications
+                print('✅ Logging out - OneSignal ID preserved in Firestore');
 
                 // Sign out
                 await FirebaseAuth.instance.signOut();
@@ -604,6 +573,7 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -976,6 +946,7 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
     );
   }
 
+  // ✅ Updated Settings Card - NO notification toggle (always enabled)
   Widget _buildSettingsCard() {
     return Container(
       decoration: BoxDecoration(
@@ -988,25 +959,30 @@ class _TechnicianProfileScreenState extends State<TechnicianProfileScreen> {
           _buildProfileMenuItem(
             icon: Icons.notifications_active,
             title: 'Push Notifications',
-            subtitle: notificationsEnabled ? 'Enabled' : 'Disabled',
-            trailing: Switch(
-              value: notificationsEnabled,
-              onChanged: _toggleNotifications,
-              activeColor: const Color(0xFF2563EB),
-            ),
-            onTap: () {},
+            subtitle: 'Always enabled for service requests',
+            onTap: null,
           ),
           const Divider(height: 1),
           _buildProfileMenuItem(
             icon: Icons.security,
             title: 'Privacy & Security',
-            onTap: () {},
+            onTap: () {
+              // Future implementation
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Coming soon')),
+              );
+            },
           ),
           const Divider(height: 1),
           _buildProfileMenuItem(
             icon: Icons.help_outline,
             title: 'Help & Support',
-            onTap: () {},
+            onTap: () {
+              // Future implementation
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Coming soon')),
+              );
+            },
           ),
           const Divider(height: 1),
           _buildProfileMenuItem(

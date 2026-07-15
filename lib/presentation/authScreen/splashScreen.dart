@@ -1,8 +1,16 @@
+// presentation/authScreen/splashScreen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
-
-import '../../AppRouter/AppRouters.dart';
+import '../../Admin/AdminScreens/AdminDashboard.dart';
+import '../../Admin/AdminScreens/AdminLoginScreen.dart';
+import '../../Admin/AdminScreens/AdminPendingScreen.dart';
+import '../authScreen/LoginScreen.dart';
+import '../DashBoard/CustomerDashboard.dart';
+import '../DashBoard/TechnicianDashboard.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,187 +19,226 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _fadeAnimation;
-
+class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    OneSignal.Notifications.requestPermission(true);
 
-    /// ANIMATION CONTROLLER
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    );
+    // ✅ Web par direct Admin Login (Splash skip)
+    if (kIsWeb) {
+      _redirectToAdmin();
+      return;
+    }
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.5,
-      end: 1,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.elasticOut,
-      ),
-    );
-
-    _fadeAnimation = Tween<double>(
-      begin: 0,
-      end: 1,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeIn,
-      ),
-    );
-
-    _animationController.forward();
-
-    /// 🚀 NAVIGATION USING APP ROUTER (NO LOGIC HERE)
-    Timer(const Duration(seconds: 3), () async {
-      final screen = await AppRouter.getStartScreen();
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => screen),
-      );
-    });
+    // ✅ Mobile: OneSignal Permission
+    try {
+      OneSignal.Notifications.requestPermission(true);
+      print('✅ OneSignal permission requested');
+    } catch (e) {
+      print('❌ OneSignal permission error: $e');
+    }
+    // ✅ Mobile: Check user status
+    _navigateToScreen();
   }
 
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
+  // ✅ Web Redirect to Admin
+  Future<void> _redirectToAdmin() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user != null) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+
+        if (doc.exists) {
+          final data = doc.data() as Map<String, dynamic>;
+          final role = data['role'] ?? 'customer';
+          final isApproved = data['isApproved'] ?? false;
+
+          // ✅ CHECK: Is user active?
+          final isActive = data['isActive'] ?? true;
+
+          if (!isActive) {
+            // User is deactivated - sign out
+            await FirebaseAuth.instance.signOut();
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminLoginScreen(),
+              ),
+            );
+            return;
+          }
+
+          // ✅ Admin approved → Dashboard
+          if (role == 'admin' && isApproved) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminDashboard(),
+              ),
+            );
+            return;
+          }
+
+          // ✅ Admin pending
+          if (role == 'admin' && !isApproved) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminPendingScreen(),
+              ),
+            );
+            return;
+          }
+        }
+      } catch (e) {
+        print('❌ Error checking admin status: $e');
+      }
+    }
+
+    // ✅ Default: Admin Login
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AdminLoginScreen(),
+      ),
+    );
+  }
+
+  // ✅ Mobile Navigation
+  Future<void> _navigateToScreen() async {
+    await Future.delayed(const Duration(seconds: 3));
+
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const LoginScreen(),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (!doc.exists) {
+        await FirebaseAuth.instance.signOut();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const LoginScreen(),
+          ),
+        );
+        return;
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+
+      // ✅ CHECK: Is user active?
+      final isActive = data['isActive'] ?? true;
+
+      if (!isActive) {
+        // ✅ User is deactivated - Sign out and go to login
+        await FirebaseAuth.instance.signOut();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const LoginScreen(),
+          ),
+        );
+        return;
+      }
+
+      final role = data['role'] ?? 'customer';
+
+      switch (role) {
+        case 'technician':
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const TechnicianDashboard(),
+            ),
+          );
+          break;
+        case 'admin':
+          final isApproved = data['isApproved'] ?? false;
+          if (isApproved) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminDashboard(),
+              ),
+            );
+          } else {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminPendingScreen(),
+              ),
+            );
+          }
+          break;
+        default:
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const CustomerDashboard(),
+            ),
+          );
+      }
+    } catch (e) {
+      print('❌ Error checking user role: $e');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const LoginScreen(),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xffF4F7FF),
-      body: Stack(
-        children: [
-
-          /// TOP RIGHT CIRCLE
-          Positioned(
-            top: -120,
-            right: -80,
-            child: Container(
-              height: 300,
-              width: 300,
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Image.asset(
+          'assets/AppLogoo/splash.PNG',
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            // 🔥 Fallback if image not found
+            return Container(
+              width: 180,
+              height: 180,
               decoration: BoxDecoration(
+                color: const Color(0xFF42D7D7).withOpacity(0.1),
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xff6A11CB).withOpacity(0.9),
-                    const Color(0xff2575FC).withOpacity(0.8),
-                  ],
-                ),
               ),
-            ),
-          ),
-
-          /// BOTTOM LEFT CIRCLE
-          Positioned(
-            bottom: -120,
-            left: -80,
-            child: Container(
-              height: 250,
-              width: 250,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xff2575FC).withOpacity(0.8),
-                    const Color(0xff6A11CB).withOpacity(0.7),
-                  ],
-                ),
+              child: const Icon(
+                Icons.build_circle,
+                size: 80,
+                color: Color(0xFF42D7D7),
               ),
-            ),
-          ),
-
-          /// MAIN CONTENT
-          Center(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-
-                  /// LOGO
-                  ScaleTransition(
-                    scale: _scaleAnimation,
-                    child: Container(
-                      height: 140,
-                      width: 140,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(40),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.12),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.cleaning_services,
-                        size: 75,
-                        color: Color(0xff2575FC),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 40),
-
-                  const Text(
-                    "Thumb Tech",
-                    style: TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  const Text(
-                    "Fast • Smart • Secure",
-                    style: TextStyle(
-                      fontSize: 17,
-                      color: Colors.black54,
-                    ),
-                  ),
-
-                  const SizedBox(height: 50),
-
-                  Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 10,
-                        ),
-                      ],
-                    ),
-                    child: const CircularProgressIndicator(
-                      color: Color(0xff2575FC),
-                      strokeWidth: 3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }

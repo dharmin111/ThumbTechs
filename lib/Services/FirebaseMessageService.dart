@@ -1,4 +1,3 @@
-// Services/FirebaseMessageService.dart
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,7 +24,6 @@ class FirebaseMessageService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) throw Exception('User not logged in');
 
-      // Get current user data
       final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
       final userData = userDoc.data();
       final senderName = userData?['name'] ?? 'User';
@@ -36,25 +34,27 @@ class FirebaseMessageService {
       print('   To: $receiverName ($receiverRole)');
       print('   Message: $message');
 
-      // Generate conversation ID
+      final String customerId = senderRole == 'customer' ? currentUser.uid : receiverId;
+      final String technicianId = senderRole == 'technician' ? currentUser.uid : receiverId;
+      final String customerName = senderRole == 'customer' ? senderName : receiverName;
+      final String technicianName = senderRole == 'technician' ? senderName : receiverName;
+
       final conversationId = _getConversationId(
         requestId: requestId,
-        customerId: senderRole == 'customer' ? currentUser.uid : receiverId,
-        technicianId: senderRole == 'technician' ? currentUser.uid : receiverId,
+        customerId: customerId,
+        technicianId: technicianId,
       );
 
       // Create or update conversation
       await _updateConversation(
         conversationId: conversationId,
         requestId: requestId,
-        customerId: senderRole == 'customer' ? currentUser.uid : receiverId,
-        customerName: senderRole == 'customer' ? senderName : receiverName,
-        technicianId: senderRole == 'technician' ? currentUser.uid : receiverId,
-        technicianName: senderRole == 'technician' ? senderName : receiverName,
+        customerId: customerId,
+        customerName: customerName,
+        technicianId: technicianId,
+        technicianName: technicianName,
         lastMessage: message,
         serviceName: await _getServiceName(requestId),
-        receiverId: receiverId,
-        receiverRole: receiverRole,
       );
 
       // Add message to subcollection
@@ -77,13 +77,26 @@ class FirebaseMessageService {
         'requestId': requestId,
       });
 
-      // Update unread count for receiver
+      // ✅ Increment ONLY the receiver's unread count
       final conversationRef = _firestore.collection('conversations').doc(conversationId);
-      await conversationRef.update({
-        'unreadCount': FieldValue.increment(1),
-      });
 
-      // ✅ SEND PUSH NOTIFICATION TO RECEIVER (Both ways)
+      if (receiverRole == 'customer') {
+        await conversationRef.update({
+          'customerUnreadCount': FieldValue.increment(1),
+          'lastMessage': message,
+          'lastMessageTime': FieldValue.serverTimestamp(),
+        });
+        print('✅ Customer unread count incremented');
+      } else {
+        await conversationRef.update({
+          'technicianUnreadCount': FieldValue.increment(1),
+          'lastMessage': message,
+          'lastMessageTime': FieldValue.serverTimestamp(),
+        });
+        print('✅ Technician unread count incremented');
+      }
+
+      // Send push notification
       await _sendPushNotification(
         receiverId: receiverId,
         receiverRole: receiverRole,
@@ -93,7 +106,6 @@ class FirebaseMessageService {
         requestId: requestId,
       );
 
-      // Send in-app notification
       await _sendInAppNotification(
         receiverId: receiverId,
         title: '💬 New Message from $senderName',
@@ -110,7 +122,6 @@ class FirebaseMessageService {
     }
   }
 
-  // ✅ Send push notification to receiver (works for both customer and technician)
   Future<void> _sendPushNotification({
     required String receiverId,
     required String receiverRole,
@@ -120,17 +131,14 @@ class FirebaseMessageService {
     required String requestId,
   }) async {
     try {
-      // Get receiver's OneSignal ID
       final userDoc = await _firestore.collection('users').doc(receiverId).get();
       final oneSignalId = userDoc.data()?['oneSignalId'];
 
       if (oneSignalId == null || oneSignalId.isEmpty) {
         print('⚠️ No OneSignal ID for $receiverRole: $receiverId');
-        print('💡 User needs to open app and enable notifications');
         return;
       }
 
-      // Customize notification title based on receiver role
       String notificationTitle;
       if (receiverRole == 'technician') {
         notificationTitle = '🔧 New Message from Customer';
@@ -161,7 +169,6 @@ class FirebaseMessageService {
     }
   }
 
-  // Send in-app notification
   Future<void> _sendInAppNotification({
     required String receiverId,
     required String title,
@@ -186,7 +193,6 @@ class FirebaseMessageService {
     }
   }
 
-  // Update conversation
   Future<void> _updateConversation({
     required String conversationId,
     required String requestId,
@@ -196,14 +202,11 @@ class FirebaseMessageService {
     required String technicianName,
     required String lastMessage,
     required String serviceName,
-    required String receiverId,
-    required String receiverRole,
   }) async {
     final conversationRef = _firestore.collection('conversations').doc(conversationId);
     final conversationDoc = await conversationRef.get();
 
     if (!conversationDoc.exists) {
-      // Create new conversation
       await conversationRef.set({
         'requestId': requestId,
         'customerId': customerId,
@@ -212,17 +215,13 @@ class FirebaseMessageService {
         'technicianName': technicianName,
         'lastMessage': lastMessage,
         'lastMessageTime': FieldValue.serverTimestamp(),
-        'unreadCount': 1,
+        'customerUnreadCount': 0,
+        'technicianUnreadCount': 0,
         'serviceName': serviceName,
         'status': 'active',
         'createdAt': FieldValue.serverTimestamp(),
       });
-    } else {
-      // Update existing conversation
-      await conversationRef.update({
-        'lastMessage': lastMessage,
-        'lastMessageTime': FieldValue.serverTimestamp(),
-      });
+      print('✅ New conversation created');
     }
   }
 
@@ -241,32 +240,32 @@ class FirebaseMessageService {
     });
   }
 
-  // Get conversations for current user (real-time)
+  // ✅ FIXED: No status filter in query - local filtering
   Stream<List<ConversationModel>> getUserConversations() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return Stream.value([]);
 
+    // ✅ Get conversations where user is customer (NO status filter)
     final customerConversations = _firestore
         .collection('conversations')
         .where('customerId', isEqualTo: currentUser.uid)
-        .where('status', isEqualTo: 'active')
-        .orderBy('lastMessageTime', descending: true)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
           .map((doc) => ConversationModel.fromMap(doc.data(), doc.id))
+          .where((conv) => conv.status == 'active') // ✅ Local filter
           .toList();
     });
 
+    // ✅ Get conversations where user is technician (NO status filter)
     final technicianConversations = _firestore
         .collection('conversations')
         .where('technicianId', isEqualTo: currentUser.uid)
-        .where('status', isEqualTo: 'active')
-        .orderBy('lastMessageTime', descending: true)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
           .map((doc) => ConversationModel.fromMap(doc.data(), doc.id))
+          .where((conv) => conv.status == 'active') // ✅ Local filter
           .toList();
     });
 
@@ -286,11 +285,13 @@ class FirebaseMessageService {
     );
   }
 
-  // Mark messages as read
+  // ✅ FIXED: Mark messages as read
   Future<void> markMessagesAsRead(String conversationId) async {
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return;
+
+      print('📖 Marking messages as read for user: ${currentUser.uid}');
 
       final messagesRef = _firestore
           .collection('conversations')
@@ -302,43 +303,66 @@ class FirebaseMessageService {
           .where('isRead', isEqualTo: false)
           .get();
 
+      print('📖 Found ${unreadMessages.docs.length} unread messages');
+
       final batch = _firestore.batch();
       for (var doc in unreadMessages.docs) {
-        batch.update(doc.reference, {'isRead': true, 'readAt': FieldValue.serverTimestamp()});
+        batch.update(doc.reference, {
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp()
+        });
       }
       await batch.commit();
 
-      // Reset unread count in conversation
-      await _firestore.collection('conversations').doc(conversationId).update({
-        'unreadCount': 0,
-      });
+      // Reset ONLY the current user's unread count
+      final conversationRef = _firestore.collection('conversations').doc(conversationId);
+      final conversationDoc = await conversationRef.get();
+
+      if (conversationDoc.exists) {
+        final data = conversationDoc.data() as Map<String, dynamic>;
+        final bool isCustomer = data['customerId'] == currentUser.uid;
+
+        if (isCustomer) {
+          await conversationRef.update({ 'customerUnreadCount': 0 });
+          print('✅ Customer unread count reset to 0');
+        } else {
+          await conversationRef.update({ 'technicianUnreadCount': 0 });
+          print('✅ Technician unread count reset to 0');
+        }
+      }
+
     } catch (e) {
       print('Error marking messages as read: $e');
     }
   }
 
-  // Get unread message count for current user
+  // ✅ FIXED: No status filter in query - local filtering
   Stream<int> getUnreadMessageCount() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return Stream.value(0);
 
+    // ✅ Query without status filter (to avoid permission error)
     return _firestore
         .collection('conversations')
-        .where('status', isEqualTo: 'active')
         .snapshots()
         .map((snapshot) {
       int count = 0;
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        if (data['customerId'] == currentUser.uid || data['technicianId'] == currentUser.uid) {
-          final unreadCount = data['unreadCount'];
-          if (unreadCount != null) {
-            if (unreadCount is int) {
-              count += unreadCount;
-            } else if (unreadCount is num) {
-              count += unreadCount.toInt();
-            }
-          }
+
+        // ✅ Skip if not active (local filter)
+        if (data['status'] != 'active') continue;
+
+        // Check if current user is customer
+        if (data['customerId'] == currentUser.uid) {
+          final unreadCount = data['customerUnreadCount'] ?? 0;
+          count += unreadCount is int ? unreadCount : 0;
+        }
+
+        // Check if current user is technician
+        if (data['technicianId'] == currentUser.uid) {
+          final unreadCount = data['technicianUnreadCount'] ?? 0;
+          count += unreadCount is int ? unreadCount : 0;
         }
       }
       return count;

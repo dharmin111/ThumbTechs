@@ -56,7 +56,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
       'Washing Machine Repair': 'Washing Machine Repair',
       'Microwave Repair': 'Microwave Repair',
       'Refrigerator Repair': 'Refrigerator Repair',
-      'AC Repair & Service': 'AC Repair & Service',  // Changed from 'AC Service'
+      'AC Repair & Service': 'AC Repair & Service',
       'Geyser Repair': 'Geyser Repair',
       'Air Cooler Repair': 'Air Cooler Repair',
       'TV Repair': 'TV Repair',
@@ -210,7 +210,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header Banner with specific description
+            // Header Banner
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -259,9 +259,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 8),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
@@ -308,9 +306,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 8),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
@@ -328,6 +324,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   },
                   decoration: const InputDecoration(
                     hintText: 'Enter your area pincode',
+                    hintStyle: TextStyle(fontSize:14,color: Colors.grey),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.all(12),
                     counterText: '',
@@ -350,9 +347,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 8),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
@@ -369,6 +364,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   },
                   decoration: const InputDecoration(
                     hintText: 'Enter your complete address',
+                    hintStyle: TextStyle(fontSize:14,color: Colors.grey),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.all(12),
                   ),
@@ -390,9 +386,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                 ),
               ),
             ),
-
             const SizedBox(height: 8),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Container(
@@ -409,6 +403,7 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   },
                   decoration: const InputDecoration(
                     hintText: 'Please describe your issue in detail...',
+                    hintStyle: TextStyle(fontSize:14,color: Colors.grey),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.all(12),
                   ),
@@ -418,32 +413,109 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
 
             const SizedBox(height: 20),
 
-            // Upload Photos with Camera and Gallery options
+            // Upload Photos
+            // Upload Photos - Complete Fixed Code
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Upload Photos (Optional)',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: darkBlue.withOpacity(0.8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Upload Photos (Optional)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: darkBlue.withOpacity(0.8),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Add photos to help technician understand the issue better',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
+                            color: darkBlue.withOpacity(0.6),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: _showImagePickerOptions,
-                        icon: Icon(Icons.add_photo_alternate, color: primaryCyan),
-                        tooltip: 'Add Photos',
-                      ),
-                    ],
+                  IconButton(
+                    onPressed: _showImagePickerOptions,
+                    icon: Icon(Icons.add_photo_alternate, color: primaryCyan),
+                    tooltip: 'Add Photos',
                   ),
                 ],
               ),
             ),
+
+            if (uploadedImages.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    Text(
+                      'Selected Images (${uploadedImages.length})',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: darkBlue.withOpacity(0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 120,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: uploadedImages.length,
+                        itemBuilder: (context, index) {
+                          return Stack(
+                            children: [
+                              Container(
+                                width: 100,
+                                height: 100,
+                                margin: const EdgeInsets.only(right: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  image: DecorationImage(
+                                    image: FileImage(File(uploadedImages[index].path)),
+                                    fit: BoxFit.cover,
+                                  ),
+                                  border: Border.all(color: primaryCyan, width: 1),
+                                ),
+                              ),
+                              Positioned(
+                                right: 5,
+                                top: 5,
+                                child: GestureDetector(
+                                  onTap: () => _removeImage(index),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.7),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             if (uploadedImages.isNotEmpty)
               Padding(
@@ -517,13 +589,19 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Your Budget (₹)',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: darkBlue.withOpacity(0.8),
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Expected Budget (Optional)',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: darkBlue.withOpacity(0.8),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Icon(Icons.info, color: primaryCyan, size: 18),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Container(
@@ -539,7 +617,8 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                         });
                       },
                       decoration: const InputDecoration(
-                        hintText: '',
+                        hintText: 'Share Your Approximate Budget, If Any',
+                        hintStyle: TextStyle(fontSize:12,color: Colors.grey),
                         prefixText: '₹',
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.all(12),
@@ -548,17 +627,67 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Technicians will see your budget',
+                    '   Leave Blank If You Are Unsure',
                     style: TextStyle(
-                      fontSize: 12,
-                      color: darkBlue.withOpacity(0.5),
+                      fontSize: 11,
+                      color:Colors.grey,
                     ),
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 20),
+
+            // 🔥 Technician Visit Charges Notice Card
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              color: Colors.orange.shade100,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.orange.shade700,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                    children: [
+                      Text(
+                        'A technician visit may include a visit/inspection charge.',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade800,
+                          height: 1.5,
+                        ),
+                      ),
+                      Text(
+                        'Please confirm the charges with the technician before the visit.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade800,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                    )
+
+
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
 
             // Continue Button
             Padding(
@@ -585,7 +714,6 @@ class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
                     return;
                   }
 
-                  // Navigate to Review Screen with all data
                   Navigator.push(
                     context,
                     MaterialPageRoute(

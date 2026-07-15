@@ -20,6 +20,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   bool isLoading = false;
   bool _isTermsAccepted = false;
+   bool _obscurePassword=false;
 
   @override
   void dispose() {
@@ -183,12 +184,18 @@ class _SignupScreenState extends State<SignupScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 25),
               child: TextField(
                 controller: passwordController,
-                obscureText: true,
+                obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   hintText: "Password",
                   prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(onPressed: (){
+                    setState(() {
+                      _obscurePassword =!_obscurePassword;
+                    });
+                  },
+                      icon: Icon(_obscurePassword ? Icons.visibility_off:Icons.visibility,color: Colors.black,) ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(18),
                     borderSide: BorderSide.none,
@@ -266,7 +273,7 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
             ),
 
-            const SizedBox(height: 25),
+            const SizedBox(height: 20),
 
             /// SIGNUP BUTTON - Matching Login Button Gradient
             Padding(
@@ -311,7 +318,7 @@ class _SignupScreenState extends State<SignupScreen> {
               ),
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
 
             /// LOGIN LINK
             Row(
