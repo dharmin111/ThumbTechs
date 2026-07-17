@@ -10,7 +10,7 @@ import '../../Admin/AdminScreens/AdminPendingScreen.dart';
 import '../../Admin/AdminScreens/AdminDashboard.dart';
 import '../../Services/authServices.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
-import '../../Services/oneSignalNotificationService .dart';
+import '../../Services/oneSignalNotificationService.dart';
 import 'forgetPassword.dart';
 
 class LoginScreen extends StatefulWidget {

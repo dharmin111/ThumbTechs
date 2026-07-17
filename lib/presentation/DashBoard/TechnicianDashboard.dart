@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../Services/FirebaseMessageService.dart';
-import '../../Services/oneSignalNotificationService .dart';
+import '../../Services/oneSignalNotificationService.dart';
 import '../TechnicianScreen/TechnicianHomeScreen.dart';
 import '../TechnicianScreen/TechnicianMyServicesScreen.dart';
 import '../TechnicianScreen/TechnicianProfileScreen.dart';

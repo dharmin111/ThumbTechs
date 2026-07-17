@@ -8,7 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
 import '../Services/FirebaseFirestoreService.dart';
-import '../../Services/oneSignalNotificationService .dart';
+import '../../Services/oneSignalNotificationService.dart';
 
 class TechnicianServiceDetailsScreen extends StatefulWidget {
   final String name;

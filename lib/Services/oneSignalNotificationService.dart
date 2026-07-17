@@ -1,4 +1,3 @@
-// Services/oneSignalNotificationService.dart
 //<!--            android:value="thumstech_channel" />-->
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -18,17 +17,17 @@ class OneSignalNotificationService {
     if (_isInitialized) return;
 
     try {
-      OneSignal.initialize(_oneSignalAppId);
-      await OneSignal.Notifications.requestPermission(true);
+      // OneSignal.initialize(_oneSignalAppId);
+     // await OneSignal.Notifications.requestPermission(true);
       _isInitialized = true;
       print('✅ OneSignal initialized');
 
-      // CLICK LISTENER WITH NAVIGATION
-      OneSignal.Notifications.addClickListener((event) {
-        final data = event.notification.additionalData ?? {};
-        print('📱 Notification Clicked: $data');
-        _handleNotificationTap(Map<String, dynamic>.from(data));
-      });
+      // // CLICK LISTENER WITH NAVIGATION
+      // OneSignal.Notifications.addClickListener((event) {
+      //   final data = event.notification.additionalData ?? {};
+      //   print('📱 Notification Clicked: $data');
+      //   _handleNotificationTap(Map<String, dynamic>.from(data));
+      // });
 
       // FOREGROUND LISTENER
       OneSignal.Notifications.addForegroundWillDisplayListener((event) {

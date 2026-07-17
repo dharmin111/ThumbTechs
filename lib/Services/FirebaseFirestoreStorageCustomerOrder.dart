@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../model/ServiceRequestModel.dart';
-import 'oneSignalNotificationService .dart';
+import 'oneSignalNotificationService.dart';
 
 class FirebaseFirestoreStorageCustomerOrder {
   static final FirebaseAuth _auth = FirebaseAuth.instance;

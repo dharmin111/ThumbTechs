@@ -29,14 +29,14 @@ class _SplashScreenState extends State<SplashScreen> {
       _redirectToAdmin();
       return;
     }
-
-    // ✅ Mobile: OneSignal Permission
-    try {
-      OneSignal.Notifications.requestPermission(true);
-      print('✅ OneSignal permission requested');
-    } catch (e) {
-      print('❌ OneSignal permission error: $e');
-    }
+    //
+    // // ✅ Mobile: OneSignal Permission
+    // try {
+    //   OneSignal.Notifications.requestPermission(true);
+    //   print('✅ OneSignal permission requested');
+    // } catch (e) {
+    //   print('❌ OneSignal permission error: $e');
+    // }
     // ✅ Mobile: Check user status
     _navigateToScreen();
   }
@@ -51,10 +51,15 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (user != null) {
       try {
+        // final doc = await FirebaseFirestore.instance
+        //     .collection('users')
+        //     .doc(user.uid)
+        //     .get();
         final doc = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 10));
 
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;

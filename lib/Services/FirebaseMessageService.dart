@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:rxdart/rxdart.dart';
 import '../model/MessageModel.dart';
-import 'oneSignalNotificationService .dart';
+import 'oneSignalNotificationService.dart';
 
 class FirebaseMessageService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
