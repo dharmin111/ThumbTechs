@@ -12,6 +12,7 @@ class TechnicianHomeScreen extends StatefulWidget {
   State<TechnicianHomeScreen> createState() => _TechnicianHomeScreenState();
 }
 
+
 class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
   String? technicianName;
   List<String> technicianCategories = [];
