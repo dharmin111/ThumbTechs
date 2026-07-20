@@ -2,7 +2,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../Services/oneSignalNotificationService.dart';
+import '../../Services/MembershipService.dart';
+import '../Membership/MembershipScreen.dart';
+import '../membership/MembershipExpiredScreen.dart';
 import 'YouTubeVideoPlayerScreen.dart';
 
 class TechnicianHomeScreen extends StatefulWidget {
@@ -12,8 +16,8 @@ class TechnicianHomeScreen extends StatefulWidget {
   State<TechnicianHomeScreen> createState() => _TechnicianHomeScreenState();
 }
 
-
 class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
+  // Technician Data
   String? technicianName;
   List<String> technicianCategories = [];
   List<String> technicianPincodes = [];
@@ -21,22 +25,39 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
   bool isLoading = true;
   bool _isActive = true;
 
+  // 🔥 MEMBERSHIP STATUS
+  bool _hasActivePlan = false;
+  bool _isCheckingPlan = true;
+  bool _expiredScreenShown = false;
+
+  // Requests
   int totalPending = 0;
   Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? _requestsStream;
-
   int _lastRequestCount = 0;
   bool _isPopupShowing = false;
   bool _isFirstSnapshot = true;
-
   String? _highlightedRequestId;
   bool _shouldHighlight = false;
-
   final ScrollController _scrollController = ScrollController();
+
+  // 🔥 Website URL for Membership
+  static const String _membershipUrl = 'https://thumbtech-521ae.web.app/plans';
 
   @override
   void initState() {
     super.initState();
-    _fetchTechnicianData();
+    // 🔥 Bypass all checks - directly go to membership screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const MembershipScreen(),
+          ),
+        );
+      }
+    });
+    // _checkMembershipAndLoadData();
   }
 
   @override
@@ -46,13 +67,87 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     super.dispose();
   }
 
+  // ================= 🔥 CHECK MEMBERSHIP FIRST =================
+  Future<void> _checkMembershipAndLoadData() async {
+    setState(() {
+      _isCheckingPlan = true;
+      isLoading = true;
+    });
+
+    try {
+      final status = await MembershipService.getPlanStatus();
+      _hasActivePlan = status['isActive'] ?? false;
+
+      print('📊 Plan Status: $_hasActivePlan');
+
+      await _fetchTechnicianData();
+
+      setState(() {
+        _isCheckingPlan = false;
+        isLoading = false;
+      });
+
+      if (!_hasActivePlan && !_expiredScreenShown) {
+        Future.delayed(const Duration(seconds: 10), () {
+          if (mounted && !_expiredScreenShown) {
+            _showExpiredScreen();
+          }
+        });
+      }
+
+    } catch (e) {
+      print('❌ Error checking membership: $e');
+      setState(() {
+        _isCheckingPlan = false;
+        isLoading = false;
+      });
+    }
+  }
+
+  // ================= 🔥 SHOW EXPIRED SCREEN =================
+  void _showExpiredScreen() {
+    if (_expiredScreenShown || !mounted) return;
+
+    _expiredScreenShown = true;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MembershipExpiredScreen(
+          onComplete: () {
+            Navigator.pop(context);
+          },
+        ),
+      ),
+    );
+  }
+
+  // ================= 🔥 OPEN MEMBERSHIP WEBSITE =================
+  Future<void> _openMembershipWebsite() async {
+    try {
+      final url = Uri.parse(_membershipUrl);
+      if (await canLaunchUrl(url)) {
+        await launchUrl(
+          url,
+          mode: LaunchMode.externalApplication,
+        );
+        _checkMembershipAndLoadData();
+      } else {
+        throw 'Could not launch URL';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error opening website: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   // ================= FETCH TECHNICIAN DATA =================
   Future<void> _fetchTechnicianData() async {
     if (!_isActive || !mounted) return;
-
-    setState(() {
-      isLoading = true;
-    });
 
     try {
       User? user = FirebaseAuth.instance.currentUser;
@@ -250,16 +345,50 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
               const SizedBox(height: 12),
               _buildPopupDetailRow('Customer', data['userName'] ?? 'N/A'),
               const SizedBox(height: 6),
-              _buildPopupDetailRow('Phone', data['userPhone'] ?? 'N/A'),
+              _buildPopupDetailRow(
+                'Phone',
+                _hasActivePlan ? (data['userPhone'] ?? 'N/A') : '🔒 Locked',
+                isLocked: !_hasActivePlan,
+              ),
               const SizedBox(height: 6),
               _buildPopupDetailRow('Budget', '₹${data['budget'] ?? 0}'),
               const SizedBox(height: 6),
-              _buildPopupDetailRow('Location', data['location'] ?? 'N/A'),
+              _buildPopupDetailRow(
+                'Location',
+                _hasActivePlan ? (data['location'] ?? 'N/A') : '🔒 Locked',
+                isLocked: !_hasActivePlan,
+              ),
               const SizedBox(height: 6),
               _buildPopupDetailRow('Pincode', data['pincode'] ?? 'N/A'),
               if (data['issue'] != null && data['issue'].isNotEmpty) ...[
                 const SizedBox(height: 6),
                 _buildPopupDetailRow('Issue', data['issue']),
+              ],
+              if (!_hasActivePlan) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.lock, color: Colors.red, size: 16),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Subscribe to view contact details and accept requests',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ],
           ),
@@ -282,50 +411,71 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                 style: TextStyle(fontSize: 15),
               ),
             ),
-            ElevatedButton(
-              onPressed: () {
-                _isPopupShowing = false;
-                Navigator.pop(context);
+            if (_hasActivePlan)
+              ElevatedButton(
+                onPressed: () {
+                  _isPopupShowing = false;
+                  Navigator.pop(context);
 
-                setState(() {
-                  _highlightedRequestId = requestId;
-                  _shouldHighlight = true;
-                });
+                  setState(() {
+                    _highlightedRequestId = requestId;
+                    _shouldHighlight = true;
+                  });
 
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _scrollToHighlightedCard();
-                });
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToHighlightedCard();
+                  });
 
-                Future.delayed(const Duration(seconds: 30), () {
-                  if (mounted) {
-                    setState(() {
-                      _highlightedRequestId = null;
-                      _shouldHighlight = false;
-                    });
-                  }
-                });
+                  Future.delayed(const Duration(seconds: 30), () {
+                    if (mounted) {
+                      setState(() {
+                        _highlightedRequestId = null;
+                        _shouldHighlight = false;
+                      });
+                    }
+                  });
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('🔍 New task highlighted in green!'),
-                    backgroundColor: Color(0xFF2563EB),
-                    duration: Duration(seconds: 2),
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('🔍 New task highlighted in green!'),
+                      backgroundColor: Color(0xFF2563EB),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'View Now',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
               ),
-              child: const Text(
-                'View Now',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            if (!_hasActivePlan)
+              ElevatedButton(
+                onPressed: () {
+                  _isPopupShowing = false;
+                  Navigator.pop(context);
+                  _openMembershipWebsite();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Subscribe Now',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
               ),
-            ),
           ],
         );
       },
@@ -347,7 +497,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     });
   }
 
-  Widget _buildPopupDetailRow(String label, String value) {
+  Widget _buildPopupDetailRow(String label, String value, {bool isLocked = false}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -365,10 +515,10 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF0C1B4D),
+              color: isLocked ? Colors.red : const Color(0xFF0C1B4D),
             ),
           ),
         ),
@@ -378,6 +528,16 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
 
   // ================= ACCEPT REQUEST =================
   Future<void> _acceptRequest(String requestId, Map<String, dynamic> requestData) async {
+    if (!_hasActivePlan) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please subscribe to accept requests'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     try {
       User? user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -593,6 +753,16 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
   }
 
   void _showAcceptDialog(String requestId, Map<String, dynamic> data) {
+    if (!_hasActivePlan) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please subscribe to accept requests'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -617,6 +787,19 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                   Text('Budget: ₹${data['budget']}'),
                   const SizedBox(height: 4),
                   Text('Customer: ${data['userName']}'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Phone: ${_hasActivePlan ? (data['userPhone'] ?? 'N/A') : '🔒 Locked'}',
+                    style: TextStyle(
+                      color: _hasActivePlan ? Colors.black : Colors.red,
+                    ),
+                  ),
+                  Text(
+                    'Location: ${_hasActivePlan ? (data['location'] ?? 'N/A') : '🔒 Locked'}',
+                    style: TextStyle(
+                      color: _hasActivePlan ? Colors.black : Colors.red,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -668,7 +851,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
-  // 🔥 ==================== SHOW REQUEST DETAILS WITH VIDEO ====================
+  // ================= SHOW REQUEST DETAILS =================
   void _showRequestDetails(String requestId, Map<String, dynamic> data) {
     final String videoId = data['videoId'] ?? '';
     final bool hasVideo = videoId.isNotEmpty;
@@ -682,7 +865,6 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 🔥 VIDEO SECTION IN DETAILS
               if (hasVideo)
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
@@ -690,91 +872,81 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                     color: Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: Row(
-                          children: [
-                            // Icon(Icons.video_library, color: Colors.red, size: 20),
-                            // SizedBox(width: 8),
-                            // Text(
-                            //   '📺 Tutorial Video',
-                            //   style: TextStyle(
-                            //     fontWeight: FontWeight.bold,
-                            //     fontSize: 14,
-                            //   ),
-                            // ),
-                          ],
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => _openYouTubeVideo(videoId),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Image.network(
-                              'https://img.youtube.com/vi/$videoId/maxresdefault.jpg',
+                  child: GestureDetector(
+                    onTap: () => _openYouTubeVideo(videoId),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Image.network(
+                          'https://img.youtube.com/vi/$videoId/maxresdefault.jpg',
+                          height: 160,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
                               height: 160,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Container(
-                                  height: 160,
-                                  color: Colors.grey.shade200,
-                                  child: const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  height: 160,
-                                  color: Colors.grey.shade200,
-                                  child: const Center(
-                                    child: Text('Video not available'),
-                                  ),
-                                );
-                              },
-                            ),
-                            Container(
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
-                                    blurRadius: 8,
-                                  ),
-                                ],
+                              color: Colors.grey.shade200,
+                              child: const Center(
+                                child: CircularProgressIndicator(),
                               ),
-                              child: const Icon(
-                                Icons.play_arrow,
-                                size: 35,
-                                color: Colors.red,
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 160,
+                              color: Colors.grey.shade200,
+                              child: const Center(
+                                child: Text('Video not available'),
                               ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
-                      ),
-                    ],
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 8,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow,
+                            size: 35,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
-              // Details
               _buildDetailRow('Customer Name', data['userName'] ?? 'N/A'),
               const SizedBox(height: 8),
-              _buildDetailRow('Phone', data['userPhone'] ?? 'N/A'),
+              _buildDetailRow(
+                'Phone',
+                _hasActivePlan ? (data['userPhone'] ?? 'N/A') : '🔒 Subscribe to view',
+                isLocked: !_hasActivePlan,
+              ),
               const SizedBox(height: 8),
-              _buildDetailRow('Email', data['userEmail'] ?? 'N/A'),
+              _buildDetailRow(
+                'Email',
+                _hasActivePlan ? (data['userEmail'] ?? 'N/A') : '🔒 Subscribe to view',
+                isLocked: !_hasActivePlan,
+              ),
               const SizedBox(height: 8),
               _buildDetailRow('Service Type', data['serviceType'] ?? 'N/A'),
               const SizedBox(height: 8),
-              _buildDetailRow('Location', data['location'] ?? 'N/A'),
+              _buildDetailRow(
+                'Location',
+                _hasActivePlan ? (data['location'] ?? 'N/A') : '🔒 Subscribe to view',
+                isLocked: !_hasActivePlan,
+              ),
               const SizedBox(height: 8),
               _buildDetailRow('Pincode', data['pincode'] ?? 'N/A'),
               const SizedBox(height: 8),
@@ -811,7 +983,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
-  // 🔥 ==================== OPEN YOUTUBE VIDEO ====================
+  // ================= OPEN YOUTUBE VIDEO =================
   void _openYouTubeVideo(String videoId) {
     Navigator.push(
       context,
@@ -821,7 +993,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
-  // 🔥 ==================== VIDEO THUMBNAIL (FOR REQUEST CARD) ====================
+  // ================= VIDEO THUMBNAIL =================
   Widget _buildVideoThumbnail(String videoId) {
     return GestureDetector(
       onTap: () => _openYouTubeVideo(videoId),
@@ -830,87 +1002,63 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
           color: Colors.grey.shade100,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(6.0),
-              child: Row(
-                children: [
-                  // Icon(Icons.video_library, color: Colors.red, size: 16),
-                  // SizedBox(width: 6),
-                  // Text(
-                  //   '📺 Tutorial Video',
-                  //   style: TextStyle(
-                  //     fontWeight: FontWeight.w600,
-                  //     fontSize: 12,
-                  //   ),
-                  // ),
-                ],
-              ),
-            ),
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Image.network(
-                    'https://img.youtube.com/vi/$videoId/maxresdefault.jpg',
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Image.network(
+                'https://img.youtube.com/vi/$videoId/maxresdefault.jpg',
+                height: 120,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
                     height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        height: 120,
-                        color: Colors.grey.shade200,
-                        child: const Center(
-                          child: CircularProgressIndicator(),
-                        ),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        height: 120,
-                        color: Colors.grey.shade200,
-                        child: const Center(
-                          child: Text('Video not available'),
-                        ),
-                      );
-                    },
-                  ),
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
-                          blurRadius: 8,
-                        ),
-                      ],
+                    color: Colors.grey.shade200,
+                    child: const Center(
+                      child: CircularProgressIndicator(),
                     ),
-                    child: const Icon(
-                      Icons.play_arrow,
-                      size: 28,
-                      color: Colors.red,
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    height: 120,
+                    color: Colors.grey.shade200,
+                    child: const Center(
+                      child: Text('Video not available'),
                     ),
-                  ),
-                ],
+                  );
+                },
               ),
-            ),
-          ],
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.play_arrow,
+                  size: 28,
+                  color: Colors.red,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
+  Widget _buildDetailRow(String label, String value, {bool isLocked = false}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -924,7 +1072,10 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(fontSize: 13),
+            style: TextStyle(
+              fontSize: 13,
+              color: isLocked ? Colors.red : Colors.black87,
+            ),
           ),
         ),
       ],
@@ -934,13 +1085,13 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
   // ================= BUILD UI =================
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
+    if (isLoading || _isCheckingPlan) {
       return const Center(child: CircularProgressIndicator());
     }
 
     return RefreshIndicator(
       onRefresh: () async {
-        _fetchTechnicianData();
+        await _checkMembershipAndLoadData();
       },
       child: SingleChildScrollView(
         controller: _scrollController,
@@ -948,8 +1099,9 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         child: Column(
           children: [
             _buildWelcomeBanner(),
-            _buildInBetweenBanner(),
+            _buildPlanStatusButton(),
             _buildAvailabilityToggle(),
+            const SizedBox(height: 8),
             _buildStatsCards(),
             _buildPendingRequests(),
           ],
@@ -958,45 +1110,82 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
-  Widget _buildInBetweenBanner() {
-    return GestureDetector(
-      onTap: () {},
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 5),
-        width: double.infinity,
-        height: 185,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.15),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Image.asset(
-            'assets/AppLogoo/abservice.PNG',
-            width: double.infinity,
-            height: 140,
-            fit: BoxFit.fill,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: double.infinity,
-                height: 140,
-                color: Colors.grey.shade200,
-                child: const Center(
-                  child: Text(
-                    'Banner not found',
-                    style: TextStyle(color: Colors.grey),
+  // ================= PLAN STATUS BUTTON =================
+  Widget _buildPlanStatusButton() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: _openMembershipWebsite,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _hasActivePlan ? Colors.green.shade50 : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _hasActivePlan ? Colors.green : Colors.red,
+                    width: 2,
                   ),
                 ),
-              );
-            },
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: _hasActivePlan ? Colors.green : Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _hasActivePlan ? Icons.check : Icons.close,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _hasActivePlan ? '✅ Plan Active' : '❌ Plan Expired',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: _hasActivePlan ? Colors.green.shade700 : Colors.red.shade700,
+                            ),
+                          ),
+                          if (_hasActivePlan)
+                            Text(
+                              'Tap to manage subscription',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.green.shade600,
+                              ),
+                            )
+                          else
+                            Text(
+                              'Tap to subscribe now!',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.red.shade600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      color: _hasActivePlan ? Colors.green : Colors.red,
+                      size: 16,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1176,7 +1365,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
     );
   }
 
-  // ================= PENDING REQUESTS (REAL-TIME) =================
+  // ================= PENDING REQUESTS =================
   Widget _buildPendingRequests() {
     if (technicianCategories.isEmpty || technicianPincodes.isEmpty) {
       return _buildIncompleteProfileWidget();
@@ -1195,73 +1384,73 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        const Text(
-        'Available Service Requests',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-      ),
-      const SizedBox(height: 8),
-      Text(
-        'Tasks matching your categories and service areas (auto-refresh)',
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-      ),
-      const SizedBox(height: 16),
+          const Text(
+            'Available Service Requests',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Tasks matching your categories and service areas (auto-refresh)',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+          const SizedBox(height: 16),
 
-      StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-        stream: _requestsStream,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                children: [
-                  Icon(Icons.error_outline, size: 40, color: Colors.red[400]),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Error: ${snapshot.error}',
-                    style: TextStyle(color: Colors.red[400]),
+          StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+            stream: _requestsStream,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.error_outline, size: 40, color: Colors.red[400]),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Error: ${snapshot.error}',
+                        style: TextStyle(color: Colors.red[400]),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: _setupRealTimeStream,
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: _setupRealTimeStream,
-                    child: const Text('Retry'),
+                );
+              }
+
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32.0),
+                    child: CircularProgressIndicator(),
                   ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32.0),
-                child: CircularProgressIndicator(),
-              ),
-            );
-          }
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return _buildEmptyWidget();
+              }
 
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return _buildEmptyWidget();
-          }
+              final pendingRequests = snapshot.data!;
 
-          final pendingRequests = snapshot.data!;
-
-          return ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: pendingRequests.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              var request = pendingRequests[index];
-              return _buildRequestCard(request);
+              return ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: pendingRequests.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  var request = pendingRequests[index];
+                  return _buildRequestCard(request);
+                },
+              );
             },
-          );
-        },
+          ),
+        ],
       ),
-      ]
-    ),
     );
   }
 
-  // ================= REQUEST CARD WITH VIDEO BELOW DIVIDER =================
+  // ================= REQUEST CARD =================
   Widget _buildRequestCard(QueryDocumentSnapshot<Map<String, dynamic>> request) {
     Map<String, dynamic> data = request.data();
     final createdAt = (data['createdAt'] as Timestamp).toDate();
@@ -1270,11 +1459,6 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
         _shouldHighlight &&
         _highlightedRequestId == request.id;
 
-    if (isHighlighted) {
-      print('🟢 HIGHLIGHTED CARD: ${request.id}');
-    }
-
-    // 🔥 Get videoId from data
     final String videoId = data['videoId'] ?? '';
     final bool hasVideo = videoId.isNotEmpty;
 
@@ -1300,7 +1484,6 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -1359,7 +1542,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        data['Washing Machine Deep Cleaning'] ?? 'Washing Machine Deep Cleaning',
+                        data['serviceName'] ?? 'Service Request',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -1380,13 +1563,11 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                 const Divider(),
                 const SizedBox(height: 12),
 
-                // 🔥 ==================== VIDEO SECTION (BELOW DIVIDER) ====================
                 if (hasVideo) ...[
                   _buildVideoThumbnail(videoId),
                   const SizedBox(height: 12),
                 ],
 
-                // Customer Details
                 Row(
                   children: [
                     const Icon(Icons.person_outline, size: 16, color: Colors.grey),
@@ -1406,8 +1587,11 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        data['userPhone'] ?? 'No phone',
-                        style: const TextStyle(fontSize: 14),
+                        _hasActivePlan ? (data['userPhone'] ?? 'No phone') : '🔒 Subscribe to view',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _hasActivePlan ? Colors.black : Colors.red,
+                        ),
                       ),
                     ),
                   ],
@@ -1419,8 +1603,11 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        data['location'] ?? 'Location not specified',
-                        style: const TextStyle(fontSize: 14),
+                        _hasActivePlan ? (data['location'] ?? 'Location not specified') : '🔒 Subscribe to view',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _hasActivePlan ? Colors.black : Colors.red,
+                        ),
                       ),
                     ),
                   ],
@@ -1461,6 +1648,7 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                   ),
                 ],
                 const SizedBox(height: 16),
+
                 Row(
                   children: [
                     Expanded(
@@ -1479,14 +1667,17 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () {
-                          _showAcceptDialog(request.id, data);
-                        },
+                        onPressed: _hasActivePlan
+                            ? () => _showAcceptDialog(request.id, data)
+                            : null,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: _hasActivePlan ? Colors.green : Colors.grey,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        child: const Text('Accept', style: TextStyle(color: Colors.white)),
+                        child: Text(
+                          _hasActivePlan ? 'Accept' : '🔒 Locked',
+                          style: const TextStyle(color: Colors.white),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1505,6 +1696,49 @@ class _TechnicianHomeScreenState extends State<TechnicianHomeScreen> {
                     ),
                   ],
                 ),
+
+                if (!_hasActivePlan) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lock, color: Colors.red, size: 14),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Subscribe to accept requests',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.red.shade700,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _openMembershipWebsite,
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 0),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            '@99₹ Only',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

@@ -72,8 +72,8 @@ class MembershipPlan {
   // 🔥 Plan Details
   static Map<String, dynamic> getPlanDetails(String planType) {
     final plans = {
-      '2_days': {'duration': 2, 'price': 199, 'label': '2 Days'},
-      '5_days': {'duration': 5, 'price': 399, 'label': '5 Days'},
+      '2_days': {'duration': 2, 'price': 99, 'label': '2 Days'},
+      '5_days': {'duration': 5, 'price': 249, 'label': '5 Days'},
       '30_days': {'duration': 30, 'price': 1499, 'label': '30 Days'},
     };
     return plans[planType] ?? {'duration': 0, 'price': 0, 'label': 'Unknown'};

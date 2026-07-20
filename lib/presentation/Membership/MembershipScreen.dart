@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/MembershipService.dart';
 
-
 class MembershipScreen extends StatefulWidget {
   const MembershipScreen({super.key});
 
@@ -26,11 +25,9 @@ class _MembershipScreenState extends State<MembershipScreen> {
     _loadPlanStatus();
   }
 
-// In MembershipScreen.dart
   Future<void> _loadPlanStatus() async {
     setState(() => _isLoading = true);
     try {
-      // 🔥 Now this works!
       _planStatus = await MembershipService.getPlanStatus();
 
       if (_planStatus!['isActive'] == true) {
@@ -42,8 +39,8 @@ class _MembershipScreenState extends State<MembershipScreen> {
     setState(() => _isLoading = false);
   }
 
-  // 🔥 Open Web Link for Payment
-  Future<void> _openWebPayment() async {
+  // 🔥 Open Web Link for Payment with Plan Type
+  Future<void> _openWebPayment({String? planType}) async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -55,16 +52,21 @@ class _MembershipScreenState extends State<MembershipScreen> {
         throw Exception('Please login first');
       }
 
-      // 🔥 Open web URL with userId
-      final url = Uri.parse('$_webUrl?userId=${user.uid}');
+      // 🔥 Open web URL with userId and planType
+      String url = '$_webUrl?userId=${user.uid}';
+      if (planType != null) {
+        url = '$_webUrl?userId=${user.uid}&plan=$planType';
+      }
 
-      if (await canLaunchUrl(url)) {
+      final uri = Uri.parse(url);
+
+      if (await canLaunchUrl(uri)) {
         await launchUrl(
-          url,
+          uri,
           mode: LaunchMode.externalApplication,
         );
-        // User will come back after payment
-        // Refresh plan status when app resumes
+        // After returning, refresh plan status
+        await _loadPlanStatus();
       } else {
         throw 'Could not launch payment page';
       }
@@ -106,12 +108,10 @@ class _MembershipScreenState extends State<MembershipScreen> {
             children: [
               // 🔥 Plan Status Card
               _buildPlanStatusCard(),
-
               const SizedBox(height: 24),
 
-              // 🔥 Plans Grid
+              // 🔥 Plans Grid with Images Only
               _buildPlansGrid(),
-
               const SizedBox(height: 16),
 
               // 🔥 Error Message
@@ -143,7 +143,6 @@ class _MembershipScreenState extends State<MembershipScreen> {
                     ],
                   ),
                 ),
-
               const SizedBox(height: 16),
 
               // 🔥 Note
@@ -270,219 +269,84 @@ class _MembershipScreenState extends State<MembershipScreen> {
     );
   }
 
-  // 🔥 Plans Grid
+  // 🔥 Plans Grid with Images Only (Tapable)
   Widget _buildPlansGrid() {
     final plans = [
       {
-        'title': '2 Days',
-        'price': '₹199',
-        'duration': '2 Days',
-        'badge': 'QUICK',
+        'image': 'assets/membership/Trial Pack.png',
         'planType': '2_days',
-        'days': 2,
-        'amount': 199,
-        'features': [
-          '✅ Access to all services',
-          '✅ View service requests',
-          '✅ Accept jobs',
-          '✅ Chat with customers',
-        ],
+        'price': '₹99',
       },
       {
-        'title': '5 Days',
-        'price': '₹399',
-        'duration': '5 Days',
-        'badge': 'POPULAR',
+        'image': 'assets/membership/growthpack.png',
         'planType': '5_days',
-        'days': 5,
-        'amount': 399,
-        'features': [
-          '✅ Access to all services',
-          '✅ View service requests',
-          '✅ Accept jobs',
-          '✅ Chat with customers',
-          '✅ Priority support',
-        ],
-      },
-      {
-        'title': '30 Days',
-        'price': '₹1499',
-        'duration': '30 Days',
-        'badge': 'BEST VALUE',
-        'planType': '30_days',
-        'days': 30,
-        'amount': 1499,
-        'features': [
-          '✅ Access to all services',
-          '✅ View service requests',
-          '✅ Accept jobs',
-          '✅ Chat with customers',
-          '✅ Priority support',
-          '✅ Save 25%',
-        ],
+        'price': '₹249',
       },
     ];
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 1,
-        childAspectRatio: 0.9,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: plans.length,
-      itemBuilder: (context, index) {
-        final plan = plans[index];
-        final isPopular = index == 1;
-
-        return _buildPlanCard(
-          title: plan['title'] as String,
-          price: plan['price'] as String,
-          duration: plan['duration'] as String,
-          badge: plan['badge'] as String,
-          isPopular: isPopular,
-          features: plan['features'] as List<String>,
-          planType: plan['planType'] as String,
-          days: plan['days'] as int,
-          amount: plan['amount'] as int,
-        );
-      },
-    );
-  }
-
-  Widget _buildPlanCard({
-    required String title,
-    required String price,
-    required String duration,
-    required String badge,
-    required bool isPopular,
-    required List<String> features,
-    required String planType,
-    required int days,
-    required int amount,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isPopular ? const Color(0xFF42D7D7) : Colors.grey.shade200,
-          width: isPopular ? 2 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isPopular
-                ? const Color(0xFF42D7D7).withOpacity(0.2)
-                : Colors.grey.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Badge & Title
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0C1B4D),
-                  ),
+    return Column(
+      children: plans.map((plan) {
+        return GestureDetector(
+          onTap: () => _openWebPayment(planType: plan['planType'] as String),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
-                if (badge.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isPopular
-                          ? const Color(0xFFFF6B35)
-                          : const Color(0xFF42D7D7),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      badge,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.asset(
+                plan['image'] as String,
+                width: 400,
+                height: 100,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    height: 200,
+                    width: double.infinity,
+                    color: const Color(0xFF42D7D7).withOpacity(0.1),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.image_not_supported,
+                            size: 48,
+                            color: const Color(0xFF42D7D7),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            plan['planType'] == '2_days' ? 'Trial Pack' : 'Growth Pack',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF0C1B4D),
+                            ),
+                          ),
+                          Text(
+                            plan['price'] as String,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-              ],
-            ),
-
-            // Price
-            Row(
-              children: [
-                Text(
-                  price,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0C1B4D),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '/ $duration',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Features
-            ...features.map((feature) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                feature,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF0C1B4D),
-                ),
-              ),
-            )),
-
-            const Spacer(),
-
-            // Subscribe Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _openWebPayment,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isPopular
-                      ? const Color(0xFF42D7D7)
-                      : const Color(0xFF0C1B4D),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Subscribe Now',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                  );
+                },
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

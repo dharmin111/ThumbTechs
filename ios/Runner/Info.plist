@@ -29,6 +29,9 @@
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>ThumbTech uses your location to help find nearby service providers.</string>
 
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>ThumbTech uses your location only when necessary to provide nearby services.</string>
+
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
